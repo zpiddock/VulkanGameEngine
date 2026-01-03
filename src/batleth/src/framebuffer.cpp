@@ -1,9 +1,12 @@
 #include "batleth/framebuffer.hpp"
 #include <stdexcept>
 
+#include "federation/log.hpp"
+
 namespace batleth {
 
 Framebuffer::Framebuffer(const Config& config) : m_device(config.device) {
+    FED_DEBUG("Creating Framebuffer");
     m_framebuffers.resize(config.image_views.size());
 
     for (std::size_t i = 0; i < config.image_views.size(); ++i) {
@@ -25,9 +28,11 @@ Framebuffer::Framebuffer(const Config& config) : m_device(config.device) {
 }
 
 Framebuffer::~Framebuffer() {
+    FED_DEBUG("Destroying Framebuffer");
     for (auto framebuffer : m_framebuffers) {
         ::vkDestroyFramebuffer(m_device, framebuffer, nullptr);
     }
+    FED_DEBUG("Framebuffer destroyed successfully");
 }
 
 Framebuffer::Framebuffer(Framebuffer&& other) noexcept

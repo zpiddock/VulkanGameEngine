@@ -28,6 +28,7 @@ public:
         std::uint32_t width = 1280;
         std::uint32_t height = 720;
         bool resizable = true;
+        bool maximized = true;
     };
 
     explicit Window(const Config& config);

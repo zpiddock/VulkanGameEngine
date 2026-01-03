@@ -85,6 +85,7 @@ Instance::~Instance() {
     if (m_instance != VK_NULL_HANDLE) {
         FED_DEBUG("Destroying Vulkan instance");
         ::vkDestroyInstance(m_instance, nullptr);
+        FED_DEBUG("Vulkan instance destroyed successfully");
     }
 }
 

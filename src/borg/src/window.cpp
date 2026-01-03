@@ -15,6 +15,7 @@ Window::Window(const Config& config) : m_config(config) {
     FED_INFO("Creating window: \"{}\" ({}x{})", config.title, config.width, config.height);
 
     ::glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    ::glfwWindowHint(GLFW_MAXIMIZED, config.maximized ? GLFW_TRUE : GLFW_FALSE);
     ::glfwWindowHint(GLFW_RESIZABLE, config.resizable ? GLFW_TRUE : GLFW_FALSE);
 
     m_window = ::glfwCreateWindow(
@@ -39,6 +40,7 @@ Window::~Window() {
         FED_DEBUG("Destroying window");
         ::glfwDestroyWindow(m_window);
         ::glfwTerminate();
+        FED_DEBUG("Window successfully");
     }
 }
 

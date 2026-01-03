@@ -1,9 +1,12 @@
 #include "batleth/command_buffer.hpp"
 #include <stdexcept>
 
+#include "federation/log.hpp"
+
 namespace batleth {
 
 CommandBuffer::CommandBuffer(const Config& config) : m_device(config.device) {
+    FED_DEBUG("Creating Command Buffer");
     // Create command pool
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -29,9 +32,11 @@ CommandBuffer::CommandBuffer(const Config& config) : m_device(config.device) {
 }
 
 CommandBuffer::~CommandBuffer() {
+    FED_DEBUG("Destroying Command Buffer");
     if (m_command_pool != VK_NULL_HANDLE) {
         ::vkDestroyCommandPool(m_device, m_command_pool, nullptr);
     }
+    FED_DEBUG("Command Buffer destroyed successfully");
 }
 
 CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept

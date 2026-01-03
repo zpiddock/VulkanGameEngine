@@ -14,6 +14,8 @@ Swapchain::Swapchain(const Config& config) : m_device(config.device), m_config(c
 }
 
 Swapchain::~Swapchain() {
+
+    FED_DEBUG("Destroying Swapchain");
     cleanup();
 }
 
@@ -163,6 +165,7 @@ auto Swapchain::cleanup() -> void {
     if (m_swapchain != VK_NULL_HANDLE) {
         ::vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
+        FED_DEBUG("Destroyed Swapchain");
     }
 }
 

@@ -38,6 +38,8 @@ Renderer::~Renderer() {
     }
 
     m_instance.reset();
+
+    FED_DEBUG("Renderer destroyed successfully");
 }
 
 auto Renderer::begin_frame() -> bool {
@@ -79,7 +81,7 @@ auto Renderer::create_instance() -> void {
 
     FED_INFO("Available Vulkan extensions ({}):", extension_count);
     for (const auto& extension : available_extensions) {
-        FED_DEBUG("  - {} (version {})", extension.extensionName, extension.specVersion);
+        FED_DEBUG(" - {} (version {})", extension.extensionName, extension.specVersion);
     }
 
     // Get required GLFW extensions
@@ -95,7 +97,7 @@ auto Renderer::create_instance() -> void {
 
     FED_DEBUG("GLFW requires {} Vulkan extensions", glfw_extension_count);
     for (std::uint32_t i = 0; i < glfw_extension_count; ++i) {
-        FED_DEBUG("  - {}", glfw_extensions[i]);
+        FED_DEBUG(" - {}", glfw_extensions[i]);
     }
 
     // Add debug utils extension if validation is enabled

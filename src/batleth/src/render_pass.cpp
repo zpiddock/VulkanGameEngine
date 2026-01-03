@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include <array>
 
+#include "federation/log.hpp"
+
 namespace batleth {
 
 RenderPass::RenderPass(const Config& config) : m_device(config.device) {
@@ -47,9 +49,11 @@ RenderPass::RenderPass(const Config& config) : m_device(config.device) {
 }
 
 RenderPass::~RenderPass() {
+    FED_DEBUG("Destroying renderpass");
     if (m_render_pass != VK_NULL_HANDLE) {
         ::vkDestroyRenderPass(m_device, m_render_pass, nullptr);
     }
+    FED_DEBUG("Renderpass destroyed successfully");
 }
 
 RenderPass::RenderPass(RenderPass&& other) noexcept

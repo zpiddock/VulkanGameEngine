@@ -27,11 +27,13 @@ Pipeline::Pipeline(const Config& config) : m_device(config.device), m_config(con
 }
 
 Pipeline::~Pipeline() {
+    FED_DEBUG("Destroying graphics pipeline");
     cleanup();
 
     if (m_pipeline_layout != VK_NULL_HANDLE) {
         ::vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
     }
+    FED_DEBUG("Graphics pipeline destroyed successfully");
 }
 
 Pipeline::Pipeline(Pipeline&& other) noexcept

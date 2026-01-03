@@ -3,6 +3,8 @@
 #include <set>
 #include <cstring>
 
+#include "federation/log.hpp"
+
 namespace batleth {
 
 Device::Device(const Config& config) : m_surface(config.surface) {
@@ -45,8 +47,10 @@ Device::Device(const Config& config) : m_surface(config.surface) {
 }
 
 Device::~Device() {
+    FED_DEBUG("Destroying Vulkan Device");
     if (m_device != VK_NULL_HANDLE) {
         ::vkDestroyDevice(m_device, nullptr);
+        FED_DEBUG("Destroyed Vulkan Device");
     }
 }
 
