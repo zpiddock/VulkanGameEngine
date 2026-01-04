@@ -3,6 +3,7 @@ build/
 bin/
 lib/
 cmake-build-debug/
+shader_cache/
 
 # CMake generated files
 CMakeCache.txt
@@ -64,6 +65,10 @@ _deps/
 
 # Logs
 *.log
+*.ini
 
 # Compile commands for IDE support
 compile_commands.json
+
+# Compiled shaders
+*.spv
