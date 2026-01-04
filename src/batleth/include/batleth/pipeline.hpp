@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <memory>
 
 #ifdef _WIN32
     #ifdef BATLETH_EXPORTS
@@ -16,6 +17,8 @@
 #endif
 
 namespace batleth {
+
+class Shader;
 
 /**
  * RAII wrapper for VkPipeline and VkPipelineLayout.
@@ -30,9 +33,14 @@ public:
 
     struct Config {
         VkDevice device = VK_NULL_HANDLE;
-        VkRenderPass render_pass = VK_NULL_HANDLE;
+        VkRenderPass render_pass = VK_NULL_HANDLE;  // Optional, for legacy render pass mode
+        VkFormat color_format = VK_FORMAT_UNDEFINED;  // For dynamic rendering
         VkExtent2D viewport_extent = {1280, 720};
+
+        // Support both raw SPIR-V and Shader objects for flexibility
         std::vector<ShaderStage> shader_stages;
+        std::vector<Shader*> shaders;  // Non-owning pointers to Shader objects
+
         VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
         VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;

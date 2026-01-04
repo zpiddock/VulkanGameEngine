@@ -2,39 +2,41 @@
 # High-level engine integrating all subsystems
 
 add_library(klingon SHARED
-    src/engine.cpp
-    src/renderer.cpp
+        src/engine.cpp
+        src/renderer.cpp
+        src/imgui_context.cpp
 )
 
 target_include_directories(klingon
-    PUBLIC
+        PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
-    PRIVATE
+        PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_compile_features(klingon PUBLIC cxx_std_26)
 
 target_link_libraries(klingon
-    PUBLIC
+        PUBLIC
         federation
         borg
         batleth
         glm
+        imgui
 )
 
 # Set output name and versioning
 set_target_properties(klingon PROPERTIES
-    OUTPUT_NAME "klingon"
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
+        OUTPUT_NAME "klingon"
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
 # Windows DLL export/import
-if(WIN32)
+if (WIN32)
     target_compile_definitions(klingon
-        PRIVATE KLINGON_EXPORTS
-        INTERFACE KLINGON_IMPORTS
+            PRIVATE KLINGON_EXPORTS
+            INTERFACE KLINGON_IMPORTS
     )
-endif()
+endif ()

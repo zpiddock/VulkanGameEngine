@@ -9,6 +9,60 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 # Find Vulkan SDK
 find_package(Vulkan REQUIRED)
 
+# SPIRV-Headers - Required by SPIRV-Tools
+FetchContent_Declare(
+    spirv-headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
+    GIT_TAG vulkan-sdk-1.3.290.0
+    GIT_SHALLOW TRUE
+)
+
+# SPIRV-Tools - Required by GLSLang for optimization
+FetchContent_Declare(
+    spirv-tools
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools.git
+    GIT_TAG vulkan-sdk-1.3.290.0
+    GIT_SHALLOW TRUE
+)
+
+set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
+set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
+set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
+
+# GLSLang - GLSL to SPIR-V compiler (built from source for ABI compatibility)
+FetchContent_Declare(
+    glslang
+    GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+    GIT_TAG 15.0.0
+    GIT_SHALLOW TRUE
+)
+
+# Configure glslang build options
+set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_JS OFF CACHE BOOL "" FORCE)
+set(ENABLE_RTTI ON CACHE BOOL "" FORCE)
+set(ENABLE_EXCEPTIONS ON CACHE BOOL "" FORCE)
+set(ENABLE_OPT ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(spirv-headers spirv-tools glslang)
+
+# Disable warnings-as-errors for third-party libraries
+if(TARGET glslang)
+    target_compile_options(glslang PRIVATE -Wno-error)
+endif()
+if(TARGET SPIRV)
+    target_compile_options(SPIRV PRIVATE -w)
+endif()
+if(TARGET SPIRV-Tools-static)
+    target_compile_options(SPIRV-Tools-static PRIVATE -w)
+endif()
+if(TARGET SPIRV-Tools-opt)
+    target_compile_options(SPIRV-Tools-opt PRIVATE -w)
+endif()
+
 # GLFW - Windowing library
 FetchContent_Declare(
         glfw
@@ -61,8 +115,8 @@ if(TARGET VulkanMemoryAllocator)
 endif()
 
 # ImGui needs special handling as it doesn't have CMakeLists.txt
-# Create ImGui library target after FetchContent_MakeAvailable
-add_library(imgui STATIC
+# Create ImGui library target as SHARED (DLL) to avoid context issues across modules
+add_library(imgui SHARED
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -81,6 +135,16 @@ target_link_libraries(imgui PUBLIC
     glfw
     Vulkan::Vulkan
 )
+
+# Export ImGui symbols on Windows
+if(WIN32)
+    target_compile_definitions(imgui
+        PRIVATE IMGUI_API=__declspec\(dllexport\)
+    )
+    target_compile_definitions(imgui
+        INTERFACE IMGUI_API=__declspec\(dllimport\)
+    )
+endif()
 
 # Disable warnings for ImGui
 if(MSVC)

@@ -1,4 +1,5 @@
 #include "batleth/pipeline.hpp"
+#include "batleth/shader.hpp"
 #include "federation/log.hpp"
 #include <stdexcept>
 #include <fstream>
@@ -7,7 +8,8 @@
 namespace batleth {
 
 Pipeline::Pipeline(const Config& config) : m_device(config.device), m_config(config) {
-    FED_INFO("Creating graphics pipeline with {} shader stages", config.shader_stages.size());
+    FED_INFO("Creating graphics pipeline with {} raw shader stages and {} shader objects",
+             config.shader_stages.size(), config.shaders.size());
 
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
@@ -118,7 +120,7 @@ auto Pipeline::create_pipeline() -> void {
     std::vector<VkShaderModule> shader_modules;
     std::vector<VkPipelineShaderStageCreateInfo> shader_stage_infos;
 
-    // Create shader modules and stage infos
+    // Create shader modules and stage infos from SPIR-V code
     for (const auto& stage : m_config.shader_stages) {
         auto shader_module = create_shader_module(stage.spirv_code);
         shader_modules.push_back(shader_module);
@@ -130,6 +132,19 @@ auto Pipeline::create_pipeline() -> void {
         shader_stage_info.pName = "main";
 
         shader_stage_infos.push_back(shader_stage_info);
+    }
+
+    // Create shader stage infos from Shader objects (for hot-reload support)
+    for (const auto* shader : m_config.shaders) {
+        if (shader) {
+            VkPipelineShaderStageCreateInfo shader_stage_info{};
+            shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            shader_stage_info.stage = shader->get_stage();
+            shader_stage_info.module = shader->get_module();
+            shader_stage_info.pName = "main";
+
+            shader_stage_infos.push_back(shader_stage_info);
+        }
     }
 
     // Vertex input state (empty for now)
@@ -196,9 +211,35 @@ auto Pipeline::create_pipeline() -> void {
     color_blending.attachmentCount = 1;
     color_blending.pAttachments = &color_blend_attachment;
 
+    // Dynamic state (viewport and scissor)
+    std::vector<VkDynamicState> dynamic_states = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamic_state{};
+    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size());
+    dynamic_state.pDynamicStates = dynamic_states.data();
+
+    // Dynamic rendering info (Vulkan 1.3)
+    VkPipelineRenderingCreateInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &m_config.color_format;
+
     // Create graphics pipeline
     VkGraphicsPipelineCreateInfo pipeline_info{};
     pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+
+    // Use dynamic rendering if color format is provided, otherwise use legacy render pass
+    if (m_config.color_format != VK_FORMAT_UNDEFINED) {
+        pipeline_info.pNext = &rendering_info;
+        pipeline_info.renderPass = VK_NULL_HANDLE;
+    } else {
+        pipeline_info.renderPass = m_config.render_pass;
+    }
+
     pipeline_info.stageCount = static_cast<std::uint32_t>(shader_stage_infos.size());
     pipeline_info.pStages = shader_stage_infos.data();
     pipeline_info.pVertexInputState = &vertex_input_info;
@@ -208,9 +249,8 @@ auto Pipeline::create_pipeline() -> void {
     pipeline_info.pMultisampleState = &multisampling;
     pipeline_info.pDepthStencilState = nullptr;
     pipeline_info.pColorBlendState = &color_blending;
-    pipeline_info.pDynamicState = nullptr;
+    pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = m_pipeline_layout;
-    pipeline_info.renderPass = m_config.render_pass;
     pipeline_info.subpass = 0;
     pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
     pipeline_info.basePipelineIndex = -1;
