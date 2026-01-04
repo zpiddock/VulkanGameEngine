@@ -3,6 +3,7 @@
 
 add_library(batleth SHARED
         src/instance.cpp
+        src/surface.cpp
         src/device.cpp
         src/descriptors.cpp
         src/swapchain.cpp
@@ -28,6 +29,7 @@ target_compile_features(batleth PUBLIC cxx_std_26)
 target_link_libraries(batleth
         PUBLIC
         federation
+        borg
         Vulkan::Vulkan
         VulkanMemoryAllocator
         PRIVATE

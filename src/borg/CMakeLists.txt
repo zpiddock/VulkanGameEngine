@@ -18,9 +18,8 @@ target_compile_features(borg PUBLIC cxx_std_26)
 
 target_link_libraries(borg
     PUBLIC
-        Vulkan::Vulkan
+        federation
         glfw
-        batleth
 )
 
 # Set output name and versioning

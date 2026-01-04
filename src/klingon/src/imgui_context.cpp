@@ -103,11 +103,15 @@ ImGuiContext::~ImGuiContext() {
     // Wait for device to be idle before cleanup
     vkDeviceWaitIdle(m_device->get_logical_device());
 
+    // Shutdown ImGui backends - this frees all descriptor sets allocated from our pool
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ::ImGui::DestroyContext();
 
-    // DescriptorPool will be destroyed automatically (unique_ptr)
+    // m_descriptor_pool will be automatically destroyed here via RAII
+    // This is safe because ImGui has already freed all descriptor sets above
+
+    FED_DEBUG("ImGui context destroyed");
 }
 
 auto ImGuiContext::begin_frame() -> void {

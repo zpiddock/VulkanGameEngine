@@ -44,11 +44,13 @@ Renderer::Renderer(const Config& config, borg::Window& window)
 Renderer::~Renderer() {
     FED_DEBUG("Destroying renderer");
 
+    // Wait for GPU to finish before cleanup
     if (m_device) {
         m_device->wait_idle();
     }
 
-    // Cleanup synchronization objects
+    // Cleanup raw Vulkan handles that don't have RAII wrappers
+    // These are the only resources requiring manual cleanup
     for (auto semaphore : m_image_available_semaphores) {
         ::vkDestroySemaphore(m_device->get_logical_device(), semaphore, nullptr);
     }
@@ -59,24 +61,13 @@ Renderer::~Renderer() {
         ::vkDestroyFence(m_device->get_logical_device(), fence, nullptr);
     }
 
-    // Cleanup command pool (this also frees the command buffers)
     if (m_command_pool != VK_NULL_HANDLE) {
         ::vkDestroyCommandPool(m_device->get_logical_device(), m_command_pool, nullptr);
     }
 
-    // Cleanup rendering resources in reverse order (pipeline depends on shaders)
-    m_pipeline.reset();
-    m_shaders.clear();
-
-    // Cleanup swapchain and device
-    m_swapchain.reset();
-    m_device.reset();
-
-    if (m_surface != VK_NULL_HANDLE && m_instance) {
-        ::vkDestroySurfaceKHR(m_instance->get_handle(), m_surface, nullptr);
-    }
-
-    m_instance.reset();
+    // All RAII-wrapped resources (swapchain, surface, imgui_context, pipeline,
+    // shaders, device, instance) are automatically destroyed in correct order
+    // via C++ member destruction (reverse of declaration order)
 
     FED_DEBUG("Renderer destroyed successfully");
 }
@@ -280,19 +271,13 @@ auto Renderer::create_instance() -> void {
 auto Renderer::create_device() -> void {
     FED_DEBUG("Creating Vulkan device");
 
-    // Create window surface
-    VkResult result = ::glfwCreateWindowSurface(m_instance->get_handle(), m_window.get_native_handle(),
-                                                 nullptr, &m_surface);
-    if (result != VK_SUCCESS) {
-        FED_ERROR("Failed to create window surface, VkResult: {}", static_cast<int>(result));
-        throw std::runtime_error("Failed to create window surface");
-    }
-
-    FED_DEBUG("Window surface created successfully");
+    // Create window surface using RAII wrapper
+    // Surface accepts Borg::Window reference, maintaining proper layering
+    m_surface = std::make_unique<batleth::Surface>(m_instance->get_handle(), m_window);
 
     batleth::Device::Config device_config{};
     device_config.instance = m_instance->get_handle();
-    device_config.surface = m_surface;
+    device_config.surface = m_surface->get_handle();
     device_config.device_extensions = {"VK_KHR_swapchain"};
 
     m_device = std::make_unique<batleth::Device>(device_config);

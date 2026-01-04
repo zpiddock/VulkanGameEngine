@@ -7,6 +7,7 @@
 
 #include "batleth/device.hpp"
 #include "batleth/instance.hpp"
+#include "batleth/surface.hpp"
 #include "batleth/pipeline.hpp"
 #include "batleth/shader.hpp"
 #include "batleth/swapchain.hpp"
@@ -86,30 +87,34 @@ private:
     borg::Window& m_window;
     Config m_config;
 
+    // Vulkan objects - ordered for proper RAII destruction
+    // Destruction happens in REVERSE order of declaration
+    // So declare in order: instance -> surface -> device -> resources that depend on device
     std::unique_ptr<batleth::Instance> m_instance;
-    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+    std::unique_ptr<batleth::Surface> m_surface;
     std::unique_ptr<batleth::Device> m_device;
-    std::unique_ptr<batleth::Swapchain> m_swapchain;
 
-    // Rendering resources
-    std::vector<std::unique_ptr<batleth::Shader>> m_shaders;  // Extensible shader stages
-    std::unique_ptr<batleth::Pipeline> m_pipeline;
-
-    // ImGui (optional, for editor)
-    std::unique_ptr<ImGuiContext> m_imgui_context;
-
-    // Command buffers
-    VkCommandPool m_command_pool = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> m_command_buffers;
-
-    // Synchronization objects (double buffering)
+    // Synchronization objects (destroyed before device)
     static constexpr std::uint32_t MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<VkSemaphore> m_image_available_semaphores;
     std::vector<VkSemaphore> m_render_finished_semaphores;
     std::vector<VkFence> m_in_flight_fences;
+
+    // Command buffers (destroyed before device)
+    VkCommandPool m_command_pool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_command_buffers;
+
+    // Rendering resources (destroyed before device)
+    std::vector<std::unique_ptr<batleth::Shader>> m_shaders;
+    std::unique_ptr<batleth::Pipeline> m_pipeline;
+    std::unique_ptr<batleth::Swapchain> m_swapchain;
+
+    // ImGui must be destroyed before device (contains Vulkan resources)
+    std::unique_ptr<ImGuiContext> m_imgui_context;
+
+    // Frame state
     std::uint32_t m_current_frame = 0;
     std::uint32_t m_current_image_index = 0;
-
     bool m_framebuffer_resized = false;
 };
 
