@@ -35,12 +35,14 @@ include(cmake/dependencies.cmake)
 
 message(STATUS "Vulkan include: ${Vulkan_INCLUDE_DIRS}")
 
-# Add subdirectories for each library
-add_subdirectory(src/federation)
-add_subdirectory(src/borg)
-add_subdirectory(src/batleth)
-add_subdirectory(src/klingon)
+# Add subdirectories for libraries
+add_subdirectory(libs/federation)
+add_subdirectory(libs/borg)
+add_subdirectory(libs/batleth)
 
-# Add subdirectories for applications
-add_subdirectory(src/game)
-add_subdirectory(src/editor)
+# Add engine
+add_subdirectory(engine/klingon)
+
+# Add applications
+add_subdirectory(apps/demo-game)
+add_subdirectory(apps/editor)

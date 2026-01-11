@@ -5,6 +5,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+#include "imgui_context.hpp"
 #include "batleth/device.hpp"
 #include "batleth/instance.hpp"
 #include "batleth/surface.hpp"
@@ -22,11 +23,7 @@
     #define KLINGON_API
 #endif
 
-namespace borg { class Window; }
-
 namespace klingon {
-
-class ImGuiContext;
 
 /**
  * Manages the Vulkan rendering pipeline and resources.
@@ -47,7 +44,7 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
     Renderer(Renderer&&) = default;
-    Renderer& operator=(Renderer&&) = default;
+    Renderer& operator=(Renderer&&) = delete;
 
     auto begin_frame() -> bool;
     auto end_frame() -> void;
