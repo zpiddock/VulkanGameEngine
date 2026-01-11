@@ -14,7 +14,7 @@
 #endif
 
 namespace federation { class Core; }
-namespace borg { class Window; }
+namespace borg { class Window; class Input; }
 
 namespace klingon {
 
@@ -83,11 +83,13 @@ public:
 
     auto get_window() -> borg::Window& { return *m_window; };
     auto get_renderer() -> Renderer& { return *m_renderer; };
+    auto get_input() -> borg::Input& { return *m_input; };
 
 
 private:
     std::unique_ptr<federation::Core> m_core;
     std::unique_ptr<borg::Window> m_window;
+    std::unique_ptr<borg::Input> m_input;
     std::unique_ptr<Renderer> m_renderer;
 
     // Application callbacks

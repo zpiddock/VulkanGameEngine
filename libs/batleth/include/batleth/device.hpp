@@ -70,6 +70,38 @@ public:
      */
     auto end_single_time_commands(VkCommandBuffer command_buffer) -> void;
 
+    /**
+     * Find a memory type that has all the required properties
+     * @param type_filter Bitmask of suitable memory types
+     * @param properties Required memory properties
+     * @return Index of suitable memory type
+     */
+    auto find_memory_type(std::uint32_t type_filter, VkMemoryPropertyFlags properties) const -> std::uint32_t;
+
+    /**
+     * Create a Vulkan buffer
+     * @param size Size of the buffer in bytes
+     * @param usage Buffer usage flags
+     * @param properties Memory property flags
+     * @param buffer Output buffer handle
+     * @param buffer_memory Output device memory handle
+     */
+    auto create_buffer(
+        VkDeviceSize size,
+        VkBufferUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        VkBuffer& buffer,
+        VkDeviceMemory& buffer_memory
+    ) const -> void;
+
+    /**
+     * Copy data from one buffer to another
+     * @param src_buffer Source buffer
+     * @param dst_buffer Destination buffer
+     * @param size Size to copy in bytes
+     */
+    auto copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) -> void;
+
 private:
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;

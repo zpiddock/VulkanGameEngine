@@ -58,8 +58,8 @@ namespace klingon {
 
         FED_DEBUG("Created ImGui descriptor pool");
 
-        // Initialize GLFW backend
-        if (!ImGui_ImplGlfw_InitForVulkan(window, true)) {
+        // Initialize GLFW backend (callbacks will be managed by our Input system)
+        if (!ImGui_ImplGlfw_InitForVulkan(window, false)) {
             throw std::runtime_error("Failed to initialize ImGui GLFW backend");
         }
 

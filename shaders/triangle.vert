@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 // Hardcoded triangle vertices
 vec2 positions[3] = vec2[](

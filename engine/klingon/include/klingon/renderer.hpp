@@ -48,8 +48,13 @@ public:
 
     auto begin_frame() -> bool;
     auto end_frame() -> void;
+    auto begin_rendering() -> void;
+    auto end_rendering() -> void;
     auto wait_idle() -> void;
     auto on_resize() -> void;
+
+    auto get_current_command_buffer() const -> VkCommandBuffer { return m_command_buffers[m_current_frame]; }
+    auto get_current_frame_index() const -> std::uint32_t { return m_current_frame; }
 
     // ImGui access (only available if enabled)
     auto get_imgui_context() -> ImGuiContext* { return m_imgui_context.get(); }
@@ -66,6 +71,9 @@ public:
     auto get_swapchain_format() const -> VkFormat { return m_swapchain->get_format(); }
     auto get_swapchain_image_count() const -> std::size_t { return m_swapchain->get_image_count(); }
     auto get_swapchain_extent() const -> VkExtent2D { return m_swapchain->get_extent(); }
+
+    // Device access for render systems
+    auto get_device_ref() -> batleth::Device& { return *m_device; }
 
 private:
     auto create_instance() -> void;

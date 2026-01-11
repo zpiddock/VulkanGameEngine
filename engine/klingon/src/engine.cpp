@@ -3,8 +3,10 @@
 #include "federation/core.hpp"
 #include "federation/log.hpp"
 #include "borg/window.hpp"
+#include "borg/input.hpp"
 
 #include <GLFW/glfw3.h>
+#include <imgui_impl_glfw.h>
 
 namespace klingon {
 
@@ -21,12 +23,24 @@ Engine::Engine(const Config& config) {
 
     m_window = std::make_unique<borg::Window>(window_config);
 
+    // Create input manager (must be after window)
+    m_input = std::make_unique<borg::Input>(*m_window);
+
     Renderer::Config renderer_config{};
     renderer_config.application_name = config.application_name;
     renderer_config.enable_validation = config.enable_validation;
     renderer_config.enable_imgui = config.enable_imgui;
 
     m_renderer = std::make_unique<Renderer>(renderer_config, *m_window);
+
+    // Wire up ImGui input callbacks if enabled
+    if (config.enable_imgui) {
+        m_input->set_pre_key_callback(ImGui_ImplGlfw_KeyCallback);
+        m_input->set_pre_cursor_callback(ImGui_ImplGlfw_CursorPosCallback);
+        m_input->set_pre_mouse_button_callback(ImGui_ImplGlfw_MouseButtonCallback);
+        m_input->set_pre_scroll_callback(ImGui_ImplGlfw_ScrollCallback);
+        FED_DEBUG("ImGui input callbacks wired to Input system");
+    }
 
     FED_INFO("Klingon Engine initialized");
 }
@@ -87,6 +101,7 @@ auto Engine::shutdown() -> void {
     }
 
     m_renderer.reset();
+    m_input.reset();
     m_window.reset();
 
     if (m_core) {

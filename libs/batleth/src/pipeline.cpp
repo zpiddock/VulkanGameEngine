@@ -14,10 +14,10 @@ Pipeline::Pipeline(const Config& config) : m_device(config.device), m_config(con
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = 0;
-    pipeline_layout_info.pSetLayouts = nullptr;
-    pipeline_layout_info.pushConstantRangeCount = 0;
-    pipeline_layout_info.pPushConstantRanges = nullptr;
+    pipeline_layout_info.setLayoutCount = static_cast<std::uint32_t>(config.descriptor_set_layouts.size());
+    pipeline_layout_info.pSetLayouts = config.descriptor_set_layouts.empty() ? nullptr : config.descriptor_set_layouts.data();
+    pipeline_layout_info.pushConstantRangeCount = static_cast<std::uint32_t>(config.push_constant_ranges.size());
+    pipeline_layout_info.pPushConstantRanges = config.push_constant_ranges.empty() ? nullptr : config.push_constant_ranges.data();
 
     if (::vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
         FED_FATAL("Failed to create pipeline layout");
@@ -147,13 +147,13 @@ auto Pipeline::create_pipeline() -> void {
         }
     }
 
-    // Vertex input state (empty for now)
+    // Vertex input state
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = nullptr;
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = nullptr;
+    vertex_input_info.vertexBindingDescriptionCount = static_cast<std::uint32_t>(m_config.vertex_binding_descriptions.size());
+    vertex_input_info.pVertexBindingDescriptions = m_config.vertex_binding_descriptions.empty() ? nullptr : m_config.vertex_binding_descriptions.data();
+    vertex_input_info.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(m_config.vertex_attribute_descriptions.size());
+    vertex_input_info.pVertexAttributeDescriptions = m_config.vertex_attribute_descriptions.empty() ? nullptr : m_config.vertex_attribute_descriptions.data();
 
     // Input assembly state
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
@@ -222,11 +222,21 @@ auto Pipeline::create_pipeline() -> void {
     dynamic_state.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size());
     dynamic_state.pDynamicStates = dynamic_states.data();
 
+    // Depth stencil state
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil.depthTestEnable = m_config.enable_depth_test ? VK_TRUE : VK_FALSE;
+    depth_stencil.depthWriteEnable = m_config.enable_depth_write ? VK_TRUE : VK_FALSE;
+    depth_stencil.depthCompareOp = m_config.depth_compare_op;
+    depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil.stencilTestEnable = VK_FALSE;
+
     // Dynamic rendering info (Vulkan 1.3)
     VkPipelineRenderingCreateInfo rendering_info{};
     rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachmentFormats = &m_config.color_format;
+    rendering_info.depthAttachmentFormat = m_config.depth_format;
 
     // Create graphics pipeline
     VkGraphicsPipelineCreateInfo pipeline_info{};
@@ -247,7 +257,7 @@ auto Pipeline::create_pipeline() -> void {
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rasterizer;
     pipeline_info.pMultisampleState = &multisampling;
-    pipeline_info.pDepthStencilState = nullptr;
+    pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = m_pipeline_layout;

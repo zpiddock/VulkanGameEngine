@@ -240,4 +240,60 @@ auto Device::end_single_time_commands(VkCommandBuffer command_buffer) -> void {
     }
 }
 
+auto Device::find_memory_type(std::uint32_t type_filter, VkMemoryPropertyFlags properties) const -> std::uint32_t {
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    ::vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
+
+    for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((type_filter & (1 << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Failed to find suitable memory type");
+}
+
+auto Device::create_buffer(
+    VkDeviceSize size,
+    VkBufferUsageFlags usage,
+    VkMemoryPropertyFlags properties,
+    VkBuffer& buffer,
+    VkDeviceMemory& buffer_memory
+) const -> void {
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = size;
+    buffer_info.usage = usage;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (::vkCreateBuffer(m_device, &buffer_info, nullptr, &buffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create buffer");
+    }
+
+    VkMemoryRequirements mem_requirements;
+    ::vkGetBufferMemoryRequirements(m_device, buffer, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, properties);
+
+    if (::vkAllocateMemory(m_device, &alloc_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate buffer memory");
+    }
+
+    ::vkBindBufferMemory(m_device, buffer, buffer_memory, 0);
+}
+
+auto Device::copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) -> void {
+    VkCommandBuffer command_buffer = begin_single_time_commands();
+
+    VkBufferCopy copy_region{};
+    copy_region.size = size;
+    ::vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+    end_single_time_commands(command_buffer);
+}
+
 } // namespace batleth

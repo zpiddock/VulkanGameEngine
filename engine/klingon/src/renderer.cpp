@@ -21,8 +21,8 @@ Renderer::Renderer(const Config& config, borg::Window& window)
     create_instance();
     create_device();
     create_swapchain();
-    create_shaders();
-    create_pipeline();
+    // create_shaders();  // Removed - user code creates its own pipelines
+    // create_pipeline(); // Removed - user code creates its own pipelines
     create_command_pool();
     create_command_buffers();
     create_sync_objects();
@@ -109,12 +109,7 @@ auto Renderer::begin_frame() -> bool {
     return true;
 }
 
-auto Renderer::end_frame() -> void {
-    // End ImGui frame (prepares draw data)
-    if (m_imgui_context) {
-        m_imgui_context->end_frame();
-    }
-
+auto Renderer::begin_rendering() -> void {
     // Begin recording command buffer
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -125,12 +120,114 @@ auto Renderer::end_frame() -> void {
         throw std::runtime_error("Failed to begin recording command buffer");
     }
 
-    // Record rendering commands (includes triangle + ImGui)
-    record_command_buffer(m_command_buffers[m_current_frame], m_current_image_index);
+    // Transition image to color attachment optimal
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_swapchain->get_images()[m_current_image_index];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    ::vkCmdPipelineBarrier(
+        m_command_buffers[m_current_frame],
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Begin dynamic rendering
+    VkRenderingAttachmentInfo color_attachment{};
+    color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    color_attachment.imageView = m_swapchain->get_image_views()[m_current_image_index];
+    color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.clearValue.color = {{0.01f, 0.01f, 0.01f, 1.0f}};  // Dark background
+
+    // TODO: Add depth attachment support
+    VkRenderingInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rendering_info.renderArea.offset = {0, 0};
+    rendering_info.renderArea.extent = m_swapchain->get_extent();
+    rendering_info.layerCount = 1;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachments = &color_attachment;
+
+    ::vkCmdBeginRendering(m_command_buffers[m_current_frame], &rendering_info);
+
+    // Set viewport
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_swapchain->get_extent().width);
+    viewport.height = static_cast<float>(m_swapchain->get_extent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    ::vkCmdSetViewport(m_command_buffers[m_current_frame], 0, 1, &viewport);
+
+    // Set scissor
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_swapchain->get_extent();
+    ::vkCmdSetScissor(m_command_buffers[m_current_frame], 0, 1, &scissor);
+}
+
+auto Renderer::end_rendering() -> void {
+    // Render ImGui if enabled
+    if (m_imgui_context) {
+        m_imgui_context->render(m_command_buffers[m_current_frame]);
+    }
+
+    // End dynamic rendering
+    ::vkCmdEndRendering(m_command_buffers[m_current_frame]);
+
+    // Transition image to present
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_swapchain->get_images()[m_current_image_index];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+
+    ::vkCmdPipelineBarrier(
+        m_command_buffers[m_current_frame],
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
 
     // End command buffer recording
     if (::vkEndCommandBuffer(m_command_buffers[m_current_frame]) != VK_SUCCESS) {
         throw std::runtime_error("Failed to record command buffer");
+    }
+}
+
+auto Renderer::end_frame() -> void {
+    // End ImGui frame (prepares draw data)
+    if (m_imgui_context) {
+        m_imgui_context->end_frame();
     }
 
     // Submit command buffer
@@ -197,12 +294,12 @@ auto Renderer::recreate_swapchain() -> void {
     m_device->wait_idle();
 
     // Cleanup old swapchain-dependent resources
-    m_pipeline.reset();
+    // m_pipeline.reset();  // Removed - user code creates its own pipelines
     m_swapchain.reset();
 
     // Recreate swapchain and dependent resources
     create_swapchain();
-    create_pipeline();
+    // create_pipeline();  // Removed - user code creates its own pipelines
 
     FED_INFO("Swapchain recreated successfully");
 }
@@ -476,8 +573,11 @@ auto Renderer::record_command_buffer(VkCommandBuffer command_buffer, std::uint32
     scissor.extent = m_swapchain->get_extent();
     ::vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+    // Do drawing here!
+    // TODO: Loop through gameobjects and ask them to issue draw commands
+
     // Draw the triangle (3 vertices, 1 instance, first vertex 0, first instance 0)
-    ::vkCmdDraw(command_buffer, 3, 1, 0, 0);
+    // ::vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
     // Render ImGui if enabled
     if (m_imgui_context) {

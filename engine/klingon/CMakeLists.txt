@@ -5,6 +5,13 @@ add_library(klingon SHARED
         src/engine.cpp
         src/renderer.cpp
         src/imgui_context.cpp
+        src/camera.cpp
+        src/transform.cpp
+        src/movement_controller.cpp
+        src/model/mesh.cpp
+        src/game_object.cpp
+        src/render_systems/simple_render_system.cpp
+        src/render_systems/point_light_system.cpp
 )
 
 target_include_directories(klingon
@@ -24,6 +31,7 @@ target_link_libraries(klingon
         batleth
         glm
         imgui
+        tinyobjloader
 )
 
 # Set output name and versioning
