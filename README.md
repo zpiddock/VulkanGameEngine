@@ -13,7 +13,7 @@ The engine is structured into modular libraries:
 
 ## Applications
 
-- **Game** - Standalone game executable with ImGui debug interface
+- **Demo Game** - Standalone game demonstrating engine capabilities
 - **Editor** - Development editor with full ImGui interface and hot-reload support
 
 ## Features
@@ -79,20 +79,22 @@ make run-editor
 VulkanTake2/
 ├── cmake/
 │   └── dependencies.cmake      # FetchContent dependency management
-├── src/
+├── libs/                       # Core libraries
 │   ├── federation/            # Core library
 │   │   ├── include/federation/
 │   │   └── src/
 │   ├── borg/                  # Application framework
 │   │   ├── include/borg/
 │   │   └── src/
-│   ├── batleth/               # Vulkan abstractions
-│   │   ├── include/batleth/
-│   │   └── src/
-│   ├── klingon/               # Engine
-│   │   ├── include/klingon/
-│   │   └── src/
-│   ├── game/                  # Game executable
+│   └── batleth/               # Vulkan abstractions
+│       ├── include/batleth/
+│       └── src/
+├── engine/                     # Engine layer
+│   └── klingon/               # High-level engine
+│       ├── include/klingon/
+│       └── src/
+├── apps/                       # Applications
+│   ├── demo-game/             # Demo game executable
 │   │   └── main.cpp
 │   └── editor/                # Editor executable
 │       └── main.cpp
