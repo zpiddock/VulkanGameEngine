@@ -20,9 +20,20 @@ SimpleRenderSystem::~SimpleRenderSystem() {
 }
 
 auto SimpleRenderSystem::create_pipeline(VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout) -> void {
-    // Load compiled shaders
-    auto vert_code = batleth::Pipeline::load_shader_from_file("assets/shaders/simple_shader.vert.spv");
-    auto frag_code = batleth::Pipeline::load_shader_from_file("assets/shaders/simple_shader.frag.spv");
+
+    auto vertConfig = batleth::Shader::Config{};
+    vertConfig.device = m_device.get_logical_device();
+    vertConfig.filepath = "assets/shaders/simple_shader.vert";
+    vertConfig.stage = batleth::Shader::Stage::Vertex;
+    vertConfig.enable_hot_reload = true;
+    auto vert_shader_module = batleth::Shader{vertConfig};
+
+    auto fragConfig = batleth::Shader::Config{};
+    fragConfig.device = m_device.get_logical_device();
+    fragConfig.filepath = "assets/shaders/simple_shader.frag";
+    fragConfig.stage = batleth::Shader::Stage::Fragment;
+    fragConfig.enable_hot_reload = true;
+    auto frag_shader_module = batleth::Shader{fragConfig};
 
     // Get vertex input descriptions
     auto binding_descriptions = Vertex::get_binding_descriptions();
@@ -39,10 +50,8 @@ auto SimpleRenderSystem::create_pipeline(VkFormat swapchain_format, VkDescriptor
     pipeline_config.device = m_device.get_logical_device();
     pipeline_config.color_format = swapchain_format;
     pipeline_config.depth_format = VK_FORMAT_D32_SFLOAT;
-    pipeline_config.shader_stages = {
-        {vert_code, VK_SHADER_STAGE_VERTEX_BIT},
-        {frag_code, VK_SHADER_STAGE_FRAGMENT_BIT}
-    };
+    pipeline_config.shaders.push_back(&vert_shader_module);
+    pipeline_config.shaders.push_back(&frag_shader_module);
     pipeline_config.vertex_binding_descriptions = binding_descriptions;
     pipeline_config.vertex_attribute_descriptions = attribute_descriptions;
     pipeline_config.descriptor_set_layouts = {global_set_layout};

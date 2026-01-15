@@ -23,8 +23,20 @@ PointLightSystem::~PointLightSystem() {
 
 auto PointLightSystem::create_pipeline(VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout) -> void {
     // Load compiled shaders
-    auto vert_code = batleth::Pipeline::load_shader_from_file("assets/shaders/pointlight.vert.spv");
-    auto frag_code = batleth::Pipeline::load_shader_from_file("assets/shaders/pointlight.frag.spv");
+
+    auto vertConfig = batleth::Shader::Config{};
+    vertConfig.device = m_device.get_logical_device();
+    vertConfig.filepath = "assets/shaders/pointlight.vert";
+    vertConfig.stage = batleth::Shader::Stage::Vertex;
+    vertConfig.enable_hot_reload = true;
+    auto vert_shader_module = batleth::Shader{vertConfig};
+
+    auto fragConfig = batleth::Shader::Config{};
+    fragConfig.device = m_device.get_logical_device();
+    fragConfig.filepath = "assets/shaders/pointlight.frag";
+    fragConfig.stage = batleth::Shader::Stage::Fragment;
+    fragConfig.enable_hot_reload = true;
+    auto frag_shader_module = batleth::Shader{fragConfig};
 
     // Configure push constants
     VkPushConstantRange push_constant_range{};
@@ -37,10 +49,8 @@ auto PointLightSystem::create_pipeline(VkFormat swapchain_format, VkDescriptorSe
     pipeline_config.device = m_device.get_logical_device();
     pipeline_config.color_format = swapchain_format;
     pipeline_config.depth_format = VK_FORMAT_D32_SFLOAT;
-    pipeline_config.shader_stages = {
-        {vert_code, VK_SHADER_STAGE_VERTEX_BIT},
-        {frag_code, VK_SHADER_STAGE_FRAGMENT_BIT}
-    };
+    pipeline_config.shaders.push_back(&vert_shader_module);
+    pipeline_config.shaders.push_back(&frag_shader_module);
     // No vertex input - billboard quad generated from gl_VertexIndex
     pipeline_config.descriptor_set_layouts = {global_set_layout};
     pipeline_config.push_constant_ranges = {push_constant_range};
@@ -49,7 +59,7 @@ auto PointLightSystem::create_pipeline(VkFormat swapchain_format, VkDescriptorSe
     pipeline_config.cull_mode = VK_CULL_MODE_NONE;
     pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     pipeline_config.enable_depth_test = true;
-    pipeline_config.enable_depth_write = false; // Don't write to depth buffer for lights
+    pipeline_config.enable_depth_write = true; // Don't write to depth buffer for lights
     pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS;
 
     m_pipeline = std::make_unique<batleth::Pipeline>(pipeline_config);
