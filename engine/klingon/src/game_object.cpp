@@ -2,6 +2,11 @@
 
 namespace klingon {
 
+auto GameObject::create_game_object() -> GameObject {
+    static id_t current_id = 0;
+    return GameObject{current_id++};
+}
+
 auto GameObject::create_point_light(float intensity, float radius, glm::vec3 color) -> GameObject {
     auto game_obj = create_game_object();
     game_obj.color = color;

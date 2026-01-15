@@ -40,10 +40,7 @@ public:
     /**
      * Create a new game object with unique ID
      */
-    static auto create_game_object() -> GameObject {
-        static id_t current_id = 0;
-        return GameObject{current_id++};
-    }
+    static auto create_game_object() -> GameObject;
 
     /**
      * Create a point light game object
