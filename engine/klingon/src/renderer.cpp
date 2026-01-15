@@ -36,6 +36,7 @@ Renderer::Renderer(const Config& config, borg::Window& window)
             m_window.get_native_handle(),
             *m_device,
             m_swapchain->get_format(),
+            m_depth_format,
             static_cast<std::uint32_t>(m_swapchain->get_image_count())
         );
     }
@@ -720,7 +721,7 @@ auto Renderer::cleanup_depth_resources() -> void {
 }
 
 auto Renderer::find_depth_format() -> VkFormat {
-    std::vector<VkFormat> candidates = {
+    std::vector candidates = {
         VK_FORMAT_D32_SFLOAT,
         VK_FORMAT_D32_SFLOAT_S8_UINT,
         VK_FORMAT_D24_UNORM_S8_UINT

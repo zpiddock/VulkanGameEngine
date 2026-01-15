@@ -15,13 +15,15 @@ namespace klingon {
     ImGuiContext::ImGuiContext(GLFWwindow *window,
                                batleth::Device &device,
                                VkFormat color_format,
+                               VkFormat depth_format,
                                std::uint32_t image_count)
-        : ImGuiContext(window, device, color_format, image_count, Config{}) {
+        : ImGuiContext(window, device, color_format, depth_format, image_count, Config{}) {
     }
 
     ImGuiContext::ImGuiContext(GLFWwindow *window,
                                batleth::Device &device,
                                VkFormat color_format,
+                               VkFormat depth_format,
                                std::uint32_t image_count,
                                const Config &config)
         : m_device(&device)
@@ -83,6 +85,7 @@ namespace klingon {
         pipeline_rendering_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
         pipeline_rendering_create_info.colorAttachmentCount = 1;
         pipeline_rendering_create_info.pColorAttachmentFormats = &color_format;
+        pipeline_rendering_create_info.depthAttachmentFormat = depth_format;
 
         init_info.PipelineInfoMain.PipelineRenderingCreateInfo = pipeline_rendering_create_info;
         init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;

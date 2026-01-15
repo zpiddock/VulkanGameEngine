@@ -40,10 +40,12 @@ public:
     ImGuiContext(GLFWwindow* window,
                  batleth::Device& device,
                  VkFormat color_format,
+                 VkFormat depth_format,
                  std::uint32_t image_count);
     ImGuiContext(GLFWwindow* window,
                  batleth::Device& device,
                  VkFormat color_format,
+                 VkFormat depth_format,
                  std::uint32_t image_count,
                  const Config& config);
     ~ImGuiContext();
