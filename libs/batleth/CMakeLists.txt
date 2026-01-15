@@ -5,6 +5,7 @@ add_library(batleth SHARED
         src/instance.cpp
         src/surface.cpp
         src/device.cpp
+        src/buffer.cpp
         src/descriptors.cpp
         src/swapchain.cpp
         src/render_pass.cpp
