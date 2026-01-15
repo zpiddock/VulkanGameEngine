@@ -40,7 +40,6 @@ auto main() -> int {
 
         // Start with cursor disabled for scene camera
         auto* window = engine.get_window().get_native_handle();
-        ::glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         // Enable raw mouse motion if available
         if (::glfwRawMouseMotionSupported()) {

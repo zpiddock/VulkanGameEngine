@@ -40,20 +40,6 @@ auto MovementController::update(GLFWwindow* window, float delta_time, Transform&
         transform.translation += movement_speed * delta_time * glm::normalize(move_dir);
     }
 
-    // Keyboard rotation (arrow keys)
-    if (::glfwGetKey(window, keys.look_right) == GLFW_PRESS) {
-        transform.rotation.y += look_speed * delta_time;
-    }
-    if (::glfwGetKey(window, keys.look_left) == GLFW_PRESS) {
-        transform.rotation.y -= look_speed * delta_time;
-    }
-    if (::glfwGetKey(window, keys.look_up) == GLFW_PRESS) {
-        transform.rotation.x += look_speed * delta_time;
-    }
-    if (::glfwGetKey(window, keys.look_down) == GLFW_PRESS) {
-        transform.rotation.x -= look_speed * delta_time;
-    }
-
     // Clamp pitch
     transform.rotation.x = glm::clamp(transform.rotation.x, -1.5f, 1.5f);
 
