@@ -15,6 +15,10 @@ add_library(batleth SHARED
         src/pipeline.cpp
         src/framebuffer.cpp
         src/command_buffer.cpp
+        src/render_graph_resource.cpp
+        src/barrier_batcher.cpp
+        src/transient_allocator.cpp
+        src/render_graph_pass.cpp
 )
 
 target_include_directories(batleth

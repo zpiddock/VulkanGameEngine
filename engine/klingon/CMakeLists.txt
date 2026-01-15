@@ -12,6 +12,7 @@ add_library(klingon SHARED
         src/game_object.cpp
         src/render_systems/simple_render_system.cpp
         src/render_systems/point_light_system.cpp
+        src/render_graph.cpp
 )
 
 target_include_directories(klingon
