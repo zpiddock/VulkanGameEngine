@@ -128,7 +128,7 @@ auto MeshData::load_from_file(const std::string& filepath) -> void {
             }
 
             // Deduplicate vertices
-            if (unique_vertices.find(vertex) == unique_vertices.end()) {
+            if (!unique_vertices.contains(vertex)) {
                 unique_vertices[vertex] = static_cast<uint32_t>(vertices.size());
                 vertices.push_back(vertex);
             }

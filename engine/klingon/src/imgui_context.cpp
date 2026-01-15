@@ -96,7 +96,7 @@ namespace klingon {
     }
 
     ImGuiContext::~ImGuiContext() {
-        FED_INFO("Shutting down ImGui context");
+        FED_DEBUG("Shutting down ImGui context");
 
         // Wait for device to be idle before cleanup
         vkDeviceWaitIdle(m_device->get_logical_device());
@@ -119,10 +119,14 @@ namespace klingon {
     }
 
     auto ImGuiContext::end_frame() -> void {
-        ::ImGui::Render();
+        // Note: ::ImGui::Render() is called in render() to ensure draw data
+        // is ready when we need it for Vulkan command recording
     }
 
     auto ImGuiContext::render(VkCommandBuffer command_buffer) -> void {
+        // Finalize ImGui frame and generate draw data
+        ::ImGui::Render();
+
         ImGui_ImplVulkan_RenderDrawData(::ImGui::GetDrawData(), command_buffer);
 
         // Update and render additional platform windows (if multi-viewport is enabled)
