@@ -315,6 +315,12 @@ auto Renderer::wait_idle() -> void {
     }
 }
 
+auto Renderer::render_imgui(VkCommandBuffer cmd) -> void {
+    if (m_imgui_context) {
+        m_imgui_context->render(cmd);
+    }
+}
+
 auto Renderer::on_resize() -> void {
     FED_DEBUG("Window resized, marking for swapchain recreation");
     m_framebuffer_resized = true;

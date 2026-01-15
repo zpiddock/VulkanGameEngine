@@ -59,6 +59,7 @@ public:
     // ImGui access (only available if enabled)
     auto get_imgui_context() -> ImGuiContext* { return m_imgui_context.get(); }
     auto has_imgui() const -> bool { return m_imgui_context != nullptr; }
+    auto render_imgui(VkCommandBuffer cmd) -> void;
 
     // Vulkan handle getters
     auto get_instance() const -> VkInstance { return m_instance->get_handle(); }
@@ -71,6 +72,9 @@ public:
     auto get_swapchain_format() const -> VkFormat { return m_swapchain->get_format(); }
     auto get_swapchain_image_count() const -> std::size_t { return m_swapchain->get_image_count(); }
     auto get_swapchain_extent() const -> VkExtent2D { return m_swapchain->get_extent(); }
+    auto get_current_swapchain_image() const -> VkImage { return m_swapchain->get_images()[m_current_image_index]; }
+    auto get_current_swapchain_image_view() const -> VkImageView { return m_swapchain->get_image_views()[m_current_image_index]; }
+    auto get_depth_format() const -> VkFormat { return m_depth_format; }
 
     // Frame info
     static constexpr auto get_max_frames_in_flight() -> std::uint32_t { return MAX_FRAMES_IN_FLIGHT; }
