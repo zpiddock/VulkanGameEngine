@@ -72,6 +72,9 @@ public:
     auto get_swapchain_image_count() const -> std::size_t { return m_swapchain->get_image_count(); }
     auto get_swapchain_extent() const -> VkExtent2D { return m_swapchain->get_extent(); }
 
+    // Frame info
+    static constexpr auto get_max_frames_in_flight() -> std::uint32_t { return MAX_FRAMES_IN_FLIGHT; }
+
     // Device access for render systems
     auto get_device_ref() -> batleth::Device& { return *m_device; }
 
@@ -79,6 +82,7 @@ private:
     auto create_instance() -> void;
     auto create_device() -> void;
     auto create_swapchain() -> void;
+    auto create_depth_resources() -> void;
     auto create_shaders() -> void;
     auto create_pipeline() -> void;
     auto create_command_pool() -> void;
@@ -86,7 +90,9 @@ private:
     auto create_sync_objects() -> void;
 
     auto recreate_swapchain() -> void;
+    auto cleanup_depth_resources() -> void;
     auto record_command_buffer(VkCommandBuffer command_buffer, std::uint32_t image_index) -> void;
+    auto find_depth_format() -> VkFormat;
 
 
     borg::Window& m_window;
@@ -113,6 +119,12 @@ private:
     std::vector<std::unique_ptr<batleth::Shader>> m_shaders;
     std::unique_ptr<batleth::Pipeline> m_pipeline;
     std::unique_ptr<batleth::Swapchain> m_swapchain;
+
+    // Depth resources
+    VkImage m_depth_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_depth_image_memory = VK_NULL_HANDLE;
+    VkImageView m_depth_image_view = VK_NULL_HANDLE;
+    VkFormat m_depth_format = VK_FORMAT_D32_SFLOAT;
 
     // ImGui must be destroyed before device (contains Vulkan resources)
     std::unique_ptr<ImGuiContext> m_imgui_context;

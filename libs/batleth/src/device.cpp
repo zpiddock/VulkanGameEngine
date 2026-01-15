@@ -10,14 +10,13 @@ namespace batleth {
 Device::Device(const Config& config)
     : m_instance(config.instance)
     , m_surface(config.surface)
-    , m_command_pool(config.command_pool)
-    , m_owns_command_pool(false) {
+    , m_command_pool(config.command_pool) {
     pick_physical_device(config.instance, config.surface);
 
     m_indices = find_queue_families(m_physical_device, config.surface);
 
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-    std::set<std::uint32_t> unique_queue_families = {
+    std::set unique_queue_families = {
         m_indices.graphics_family.value(),
         m_indices.present_family.value()
     };

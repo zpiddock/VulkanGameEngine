@@ -9,6 +9,7 @@
 #include "federation/log.hpp"
 
 #include <GLFW/glfw3.h>
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -21,6 +22,7 @@ Renderer::Renderer(const Config& config, borg::Window& window)
     create_instance();
     create_device();
     create_swapchain();
+    create_depth_resources();
     // create_shaders();  // Removed - user code creates its own pipelines
     // create_pipeline(); // Removed - user code creates its own pipelines
     create_command_pool();
@@ -64,6 +66,9 @@ Renderer::~Renderer() {
     if (m_command_pool != VK_NULL_HANDLE) {
         ::vkDestroyCommandPool(m_device->get_logical_device(), m_command_pool, nullptr);
     }
+
+    // Cleanup depth resources
+    cleanup_depth_resources();
 
     // All RAII-wrapped resources (swapchain, surface, imgui_context, pipeline,
     // shaders, device, instance) are automatically destroyed in correct order
@@ -136,14 +141,32 @@ auto Renderer::begin_rendering() -> void {
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
+    // Transition depth image to depth attachment optimal
+    VkImageMemoryBarrier depth_barrier{};
+    depth_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    depth_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_barrier.image = m_depth_image;
+    depth_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depth_barrier.subresourceRange.baseMipLevel = 0;
+    depth_barrier.subresourceRange.levelCount = 1;
+    depth_barrier.subresourceRange.baseArrayLayer = 0;
+    depth_barrier.subresourceRange.layerCount = 1;
+    depth_barrier.srcAccessMask = 0;
+    depth_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    std::array<VkImageMemoryBarrier, 2> barriers = {barrier, depth_barrier};
+
     ::vkCmdPipelineBarrier(
         m_command_buffers[m_current_frame],
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
         0,
         0, nullptr,
         0, nullptr,
-        1, &barrier
+        static_cast<uint32_t>(barriers.size()), barriers.data()
     );
 
     // Begin dynamic rendering
@@ -155,7 +178,15 @@ auto Renderer::begin_rendering() -> void {
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.clearValue.color = {{0.01f, 0.01f, 0.01f, 1.0f}};  // Dark background
 
-    // TODO: Add depth attachment support
+    // Depth attachment
+    VkRenderingAttachmentInfo depth_attachment{};
+    depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depth_attachment.imageView = m_depth_image_view;
+    depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.clearValue.depthStencil = {1.0f, 0};
+
     VkRenderingInfo rendering_info{};
     rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering_info.renderArea.offset = {0, 0};
@@ -163,6 +194,7 @@ auto Renderer::begin_rendering() -> void {
     rendering_info.layerCount = 1;
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachments = &color_attachment;
+    rendering_info.pDepthAttachment = &depth_attachment;
 
     ::vkCmdBeginRendering(m_command_buffers[m_current_frame], &rendering_info);
 
@@ -294,11 +326,13 @@ auto Renderer::recreate_swapchain() -> void {
     m_device->wait_idle();
 
     // Cleanup old swapchain-dependent resources
+    cleanup_depth_resources();
     // m_pipeline.reset();  // Removed - user code creates its own pipelines
     m_swapchain.reset();
 
     // Recreate swapchain and dependent resources
     create_swapchain();
+    create_depth_resources();
     // create_pipeline();  // Removed - user code creates its own pipelines
 
     FED_INFO("Swapchain recreated successfully");
@@ -414,6 +448,9 @@ auto Renderer::create_command_pool() -> void {
     if (::vkCreateCommandPool(m_device->get_logical_device(), &pool_info, nullptr, &m_command_pool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create command pool");
     }
+
+    // Set command pool on device for single-time commands (staging buffers, etc.)
+    m_device->set_command_pool(m_command_pool);
 
     FED_DEBUG("Command pool created successfully");
 }
@@ -602,6 +639,103 @@ auto Renderer::record_command_buffer(VkCommandBuffer command_buffer, std::uint32
         0, nullptr,
         1, &barrier
     );
+}
+
+auto Renderer::create_depth_resources() -> void {
+    FED_DEBUG("Creating depth resources");
+
+    m_depth_format = find_depth_format();
+    auto extent = m_swapchain->get_extent();
+
+    // Create depth image
+    VkImageCreateInfo image_info{};
+    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_info.imageType = VK_IMAGE_TYPE_2D;
+    image_info.extent.width = extent.width;
+    image_info.extent.height = extent.height;
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.format = m_depth_format;
+    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (::vkCreateImage(m_device->get_logical_device(), &image_info, nullptr, &m_depth_image) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth image");
+    }
+
+    // Allocate memory for depth image
+    VkMemoryRequirements mem_requirements;
+    ::vkGetImageMemoryRequirements(m_device->get_logical_device(), m_depth_image, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex = m_device->find_memory_type(
+        mem_requirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+
+    if (::vkAllocateMemory(m_device->get_logical_device(), &alloc_info, nullptr, &m_depth_image_memory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate depth image memory");
+    }
+
+    ::vkBindImageMemory(m_device->get_logical_device(), m_depth_image, m_depth_image_memory, 0);
+
+    // Create depth image view
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = m_depth_image;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = m_depth_format;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+
+    if (::vkCreateImageView(m_device->get_logical_device(), &view_info, nullptr, &m_depth_image_view) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth image view");
+    }
+
+    FED_DEBUG("Depth resources created successfully");
+}
+
+auto Renderer::cleanup_depth_resources() -> void {
+    if (m_depth_image_view != VK_NULL_HANDLE) {
+        ::vkDestroyImageView(m_device->get_logical_device(), m_depth_image_view, nullptr);
+        m_depth_image_view = VK_NULL_HANDLE;
+    }
+    if (m_depth_image != VK_NULL_HANDLE) {
+        ::vkDestroyImage(m_device->get_logical_device(), m_depth_image, nullptr);
+        m_depth_image = VK_NULL_HANDLE;
+    }
+    if (m_depth_image_memory != VK_NULL_HANDLE) {
+        ::vkFreeMemory(m_device->get_logical_device(), m_depth_image_memory, nullptr);
+        m_depth_image_memory = VK_NULL_HANDLE;
+    }
+}
+
+auto Renderer::find_depth_format() -> VkFormat {
+    std::vector<VkFormat> candidates = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT
+    };
+
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        ::vkGetPhysicalDeviceFormatProperties(m_device->get_physical_device(), format, &props);
+
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            return format;
+        }
+    }
+
+    throw std::runtime_error("Failed to find supported depth format");
 }
 
 } // namespace klingon

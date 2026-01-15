@@ -70,6 +70,9 @@ auto Engine::run() -> void {
 
         // Begin rendering
         if (m_renderer->begin_frame()) {
+            // Begin command buffer recording and start render pass
+            m_renderer->begin_rendering();
+
             // Render callback (custom rendering)
             if (m_render_callback) {
                 m_render_callback();
@@ -79,6 +82,9 @@ auto Engine::run() -> void {
             if (m_imgui_callback && m_renderer->has_imgui()) {
                 m_imgui_callback();
             }
+
+            // End render pass and finish command buffer recording
+            m_renderer->end_rendering();
 
             m_renderer->end_frame();
         }

@@ -56,6 +56,7 @@ public:
     auto get_queue_family_indices() const -> const QueueFamilyIndices& { return m_indices; }
     auto get_surface() const -> VkSurfaceKHR { return m_surface; }
     auto get_command_pool() const -> VkCommandPool { return m_command_pool; }
+    auto set_command_pool(VkCommandPool pool) -> void { m_command_pool = pool; }
 
     auto wait_idle() const -> void;
 
