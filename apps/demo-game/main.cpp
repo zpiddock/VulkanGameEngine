@@ -1,5 +1,6 @@
 #include "klingon/engine.hpp"
 #include "klingon/renderer.hpp"
+#include "klingon/render_graph.hpp"
 #include "klingon/camera.hpp"
 #include "klingon/transform.hpp"
 #include "klingon/movement_controller.hpp"
@@ -156,6 +157,69 @@ auto main() -> int {
         // Global UBO (will be filled each frame)
         klingon::GlobalUbo ubo{};
 
+        // Create render graph
+        auto render_graph = std::make_unique<klingon::RenderGraph>(renderer);
+
+        // Track last extent for recompilation on resize
+        VkExtent2D last_extent = renderer.get_swapchain_extent();
+
+        // Lambda to build the render graph
+        auto build_render_graph = [&]() {
+            auto extent = renderer.get_swapchain_extent();
+
+            auto& builder = render_graph->begin_build();
+
+            // Create depth buffer as transient resource
+            auto depth_buffer = builder.create_image(
+                "depth",
+                batleth::ImageResourceDesc::create_2d(
+                    renderer.get_depth_format(),
+                    extent.width,
+                    extent.height,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                )
+            );
+
+            // Get backbuffer handle (set by render graph from swapchain)
+            auto backbuffer = render_graph->get_backbuffer_handle();
+
+            // Main geometry pass
+            builder.add_graphics_pass(
+                "geometry",
+                [&, depth_buffer, backbuffer](const batleth::PassExecutionContext& ctx) {
+                    // Update UBO for this frame
+                    ubo_buffers[ctx.frame_index]->write_to_buffer(&ubo);
+                    ubo_buffers[ctx.frame_index]->flush();
+
+                    // Create frame info
+                    klingon::FrameInfo frame_info{
+                        static_cast<int>(ctx.frame_index),
+                        ctx.delta_time,
+                        ctx.command_buffer,
+                        camera,
+                        global_descriptor_sets[ctx.frame_index],
+                        game_objects
+                    };
+
+                    // Render game objects
+                    simple_render_system->render_game_objects(frame_info);
+
+                    // Render point lights
+                    point_light_system->render(frame_info);
+                }
+            )
+            .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
+            .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
+            .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
+            .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+
+            render_graph->compile();
+            FED_INFO("Render graph compiled with {} passes", render_graph->get_pass_count());
+        };
+
+        // Initial build
+        build_render_graph();
+
         // Set up update callback (game logic)
         engine.set_update_callback([&](float delta_time) {
             // Update movement controller
@@ -189,32 +253,28 @@ auto main() -> int {
 
             // Update point lights in UBO
             point_light_system->update(frame_info, ubo);
+
+            // Check for resize
+            auto current_extent = renderer.get_swapchain_extent();
+            if (current_extent.width != last_extent.width ||
+                current_extent.height != last_extent.height) {
+                last_extent = current_extent;
+                build_render_graph();
+            }
         });
 
-        // Set up render callback
-        engine.set_render_callback([&] {
-            // Get current frame index
-            auto frame_index = renderer.get_current_frame_index();
+        // Set up render graph callback
+        engine.set_render_graph_callback([&](VkCommandBuffer cmd, std::uint32_t frame_index, float delta_time) {
+            // Update backbuffer with current swapchain image
+            render_graph->set_backbuffer(
+                renderer.get_current_swapchain_image(),
+                renderer.get_current_swapchain_image_view(),
+                renderer.get_swapchain_format(),
+                renderer.get_swapchain_extent()
+            );
 
-            // Update the UBO for this frame
-            ubo_buffers[frame_index]->write_to_buffer(&ubo);
-            ubo_buffers[frame_index]->flush();
-
-            // Create frame info
-            klingon::FrameInfo frame_info{
-                static_cast<int>(frame_index),
-                0.0f,  // frame_time
-                renderer.get_current_command_buffer(),
-                camera,
-                global_descriptor_sets[frame_index],
-                game_objects
-            };
-
-            // Render game objects
-            simple_render_system->render_game_objects(frame_info);
-
-            // Render point lights
-            point_light_system->render(frame_info);
+            // Execute the render graph
+            render_graph->execute(cmd, frame_index, delta_time);
         });
 
         engine.set_imgui_callback([&]() {
@@ -232,6 +292,10 @@ auto main() -> int {
                         glm::degrees(camera_transform.rotation.x),
                         glm::degrees(camera_transform.rotation.y),
                         glm::degrees(camera_transform.rotation.z));
+                    ::ImGui::Separator();
+                    ::ImGui::Text("Render Graph:");
+                    ::ImGui::BulletText("Passes: %zu", render_graph->get_pass_count());
+                    ::ImGui::BulletText("Compiled: %s", render_graph->is_compiled() ? "Yes" : "No");
                     ::ImGui::Separator();
                     ::ImGui::Text("Controls:");
                     ::ImGui::BulletText("ESC - Toggle UI mode");
