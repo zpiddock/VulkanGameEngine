@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
 #include <memory>
 #include <functional>
 
@@ -19,6 +20,7 @@ namespace borg { class Window; class Input; }
 namespace klingon {
 
 class Renderer;
+class RenderGraph;
 
 /**
  * Main engine class that orchestrates all subsystems.
@@ -43,6 +45,7 @@ public:
     using UpdateCallback = std::function<void(float delta_time)>;
     using RenderCallback = std::function<void()>;
     using ImGuiCallback = std::function<void()>;
+    using RenderGraphCallback = std::function<void(VkCommandBuffer cmd, std::uint32_t frame_index, float delta_time)>;
 
     explicit Engine(const Config& config);
     ~Engine();
@@ -71,6 +74,14 @@ public:
     auto set_imgui_callback(ImGuiCallback callback) -> void { m_imgui_callback = callback; }
 
     /**
+     * Set callback for render graph based rendering.
+     * When set, bypasses begin_rendering/end_rendering calls.
+     * The callback receives the command buffer and is responsible for all rendering.
+     * @param callback Function called with command buffer, frame index, and delta time
+     */
+    auto set_render_graph_callback(RenderGraphCallback callback) -> void { m_render_graph_callback = callback; }
+
+    /**
      * Run the main game loop
      * Blocks until the application exits
      */
@@ -96,6 +107,7 @@ private:
     UpdateCallback m_update_callback;
     RenderCallback m_render_callback;
     ImGuiCallback m_imgui_callback;
+    RenderGraphCallback m_render_graph_callback;
 
     bool m_running = false;
     float m_last_frame_time = 0.0f;
