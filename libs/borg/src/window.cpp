@@ -83,4 +83,8 @@ auto Window::wait_events() -> void {
     ::glfwWaitEvents();
 }
 
+auto Window::set_input_mode(int mode, int value) -> void {
+
+    ::glfwSetInputMode(m_window, mode, value);
+}
 } // namespace borg

@@ -43,7 +43,7 @@ auto main() -> int {
 
         // Enable raw mouse motion if available
         if (::glfwRawMouseMotionSupported()) {
-            ::glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+            engine.get_window().set_input_mode(GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
 
         // Set up update callback (editor logic)

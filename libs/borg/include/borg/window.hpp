@@ -45,6 +45,8 @@ public:
     auto poll_events() -> void;
     auto wait_events() -> void;
 
+    auto set_input_mode(int mode, int value) -> void;
+
 private:
     GLFWwindow* m_window = nullptr;
     Config m_config;
