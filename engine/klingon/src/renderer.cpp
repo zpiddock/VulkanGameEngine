@@ -795,7 +795,7 @@ auto Renderer::create_global_descriptors() -> void {
     FED_INFO("Created {} global descriptor sets", m_global_descriptor_sets.size());
 }
 
-auto Renderer::update_camera_from_scene(Scene* scene) -> void {
+auto Renderer::update_camera_from_scene(Scene* scene, float delta_time) -> void {
     if (!scene) return;
 
     auto& camera = scene->get_camera();
@@ -815,7 +815,7 @@ auto Renderer::update_camera_from_scene(Scene* scene) -> void {
     );
 }
 
-auto Renderer::update_global_ubo(Scene* scene) -> void {
+auto Renderer::update_global_ubo(Scene* scene, float delta_time) -> void {
     if (!scene) return;
 
     auto& camera = scene->get_camera();
@@ -829,7 +829,7 @@ auto Renderer::update_global_ubo(Scene* scene) -> void {
     if (m_point_light_system) {
         FrameInfo temp_info{
             static_cast<int>(m_current_frame),
-            0.0f,  // delta_time not needed for update
+            delta_time,  // delta_time not needed for update
             VK_NULL_HANDLE,  // command buffer not needed for update
             camera,
             VK_NULL_HANDLE,  // descriptor set not needed for update
@@ -998,10 +998,10 @@ auto Renderer::render_scene(Scene* scene, float delta_time) -> void {
     }
 
     // Update camera matrices from scene
-    update_camera_from_scene(scene);
+    update_camera_from_scene(scene, delta_time);
 
     // Update global UBO from scene
-    update_global_ubo(scene);
+    update_global_ubo(scene, delta_time);
 
     // Begin command buffer
     auto cmd = get_current_command_buffer();

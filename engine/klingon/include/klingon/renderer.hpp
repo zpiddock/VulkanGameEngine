@@ -138,8 +138,8 @@ private:
     // Render graph and scene management
     auto build_default_render_graph() -> void;
     auto should_rebuild_render_graph() const -> bool;
-    auto update_global_ubo(Scene* scene) -> void;
-    auto update_camera_from_scene(Scene* scene) -> void;
+    auto update_global_ubo(Scene* scene, float delta_time) -> void;
+    auto update_camera_from_scene(Scene* scene, float delta_time) -> void;
     auto create_global_descriptors() -> void;
 
 
