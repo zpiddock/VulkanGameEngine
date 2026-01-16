@@ -11,7 +11,9 @@
 namespace klingon {
 
 SimpleRenderSystem::SimpleRenderSystem(batleth::Device& device, VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout)
-    : m_device{device} {
+    : m_device{device}
+    , m_global_set_layout{global_set_layout}
+    , m_swapchain_format{swapchain_format} {
     create_pipeline(swapchain_format, global_set_layout);
 }
 
@@ -68,7 +70,7 @@ auto SimpleRenderSystem::create_pipeline(VkFormat swapchain_format, VkDescriptor
     FED_INFO("SimpleRenderSystem created successfully");
 }
 
-auto SimpleRenderSystem::render_game_objects(FrameInfo& frame_info) -> void {
+auto SimpleRenderSystem::render(FrameInfo& frame_info) -> void {
     // Bind pipeline
     ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
@@ -104,6 +106,13 @@ auto SimpleRenderSystem::render_game_objects(FrameInfo& frame_info) -> void {
         obj.model->bind(frame_info.command_buffer);
         obj.model->draw(frame_info.command_buffer);
     }
+}
+
+auto SimpleRenderSystem::on_swapchain_recreate(VkFormat format) -> void {
+    FED_INFO("SimpleRenderSystem rebuilding pipeline for new swapchain format");
+    m_swapchain_format = format;
+    m_pipeline.reset();
+    create_pipeline(format, m_global_set_layout);
 }
 
 } // namespace klingon

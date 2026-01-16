@@ -1,6 +1,5 @@
 #include "klingon/engine.hpp"
-#include "klingon/camera.hpp"
-#include "klingon/transform.hpp"
+#include "klingon/scene.hpp"
 #include "klingon/movement_controller.hpp"
 #include "federation/log.hpp"
 
@@ -25,140 +24,115 @@ auto main() -> int {
 
         klingon::Engine engine{config};
 
-        // Create camera and transform for scene view
-        klingon::Camera camera{};
-        klingon::Transform camera_transform{};
-        camera_transform.translation.z = -5.0f;  // Start camera further back for editor
+        // Create scene (owns camera automatically)
+        klingon::Scene scene;
+        scene.set_name("Editor Scene");
+        scene.get_camera_transform().translation.z = -5.0f;  // Start camera further back for editor
 
         // Create movement controller for scene camera
         klingon::MovementController scene_camera_controller{};
-        scene_camera_controller.set_target(&camera_transform);
-        scene_camera_controller.set_ui_mode(true);  // Start in ui mode
+        scene_camera_controller.set_target(&scene.get_camera_transform());
+        scene_camera_controller.set_ui_mode(true);  // Start in UI mode for editor
 
         // Register controller with input system
         engine.get_input().add_subscriber(&scene_camera_controller);
 
-        // Start with cursor disabled for scene camera
-        auto* window = engine.get_window().get_native_handle();
-
         // Enable raw mouse motion if available
+        auto* window = engine.get_window().get_native_handle();
         if (::glfwRawMouseMotionSupported()) {
             engine.get_window().set_input_mode(GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
 
+        // Set active scene (engine handles all rendering automatically)
+        engine.set_active_scene(&scene);
+
         // Set up update callback (editor logic)
         engine.set_update_callback([&](float delta_time) {
-            // Update scene camera only when not in UI mode
-            if (!scene_camera_controller.is_ui_mode()) {
-                scene_camera_controller.update(window, delta_time, camera_transform);
-            }
-
-            // Update camera view matrix
-            camera.set_view_yxz(camera_transform.translation, camera_transform.rotation);
-
-            // Set camera projection
-            auto [width, height] = engine.get_window().get_framebuffer_size();
-            float aspect = static_cast<float>(width) / static_cast<float>(height);
-            camera.set_perspective_projection(
-                glm::radians(60.0f),  // FOV
-                aspect,
-                0.1f,                 // Near plane
-                100.0f                // Far plane
-            );
-
-            // TODO: Update editor state, scene hierarchy, etc.
-        });
-
-        // Set up render callback (custom rendering)
-        engine.set_render_callback([&]() {
-            // TODO: Render scene objects using the camera
-            // For now, rendering infrastructure will be added later
+            // Update scene camera
+            scene_camera_controller.update(window, delta_time, scene.get_camera_transform());
         });
 
         // Set up ImGui callback (editor UI)
-        bool show_demo = true;
-        bool show_scene_window = true;
-        bool show_hierarchy = true;
-        bool show_stats = true;
         engine.set_imgui_callback([&]() {
             // Main menu bar
-            if (ImGui::BeginMainMenuBar()) {
-                if (ImGui::BeginMenu("File")) {
-                    if (ImGui::MenuItem("New Scene")) {}
-                    if (ImGui::MenuItem("Open Scene")) {}
-                    if (ImGui::MenuItem("Save Scene")) {}
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Exit")) {
+            if (::ImGui::BeginMainMenuBar()) {
+                if (::ImGui::BeginMenu("File")) {
+                    if (::ImGui::MenuItem("Exit")) {
                         engine.shutdown();
                     }
-                    ImGui::EndMenu();
+                    ::ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("View")) {
-                    ImGui::MenuItem("Scene", nullptr, &show_scene_window);
-                    ImGui::MenuItem("Hierarchy", nullptr, &show_hierarchy);
-                    ImGui::MenuItem("Demo Window", nullptr, &show_demo);
-                    ImGui::EndMenu();
+                if (::ImGui::BeginMenu("View")) {
+                    // View options will go here
+                    ::ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Stats")) {
-                    ImGui::MenuItem("Show Editor Stats", nullptr, &show_stats);
-                    ImGui::EndMenu();
-                }
-                ImGui::EndMainMenuBar();
-            }
-
-            // Editor stats window
-            if (show_stats) {
-                ImGui::Begin("Editor Stats");
-                ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-                ImGui::Text("Frame time: %.3f ms", 1000.0f / ImGui::GetIO().Framerate);
-                ImGui::Separator();
-                ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)",
-                    camera_transform.translation.x,
-                    camera_transform.translation.y,
-                    camera_transform.translation.z);
-                ImGui::Text("Camera Rotation: (%.2f, %.2f, %.2f)",
-                    glm::degrees(camera_transform.rotation.x),
-                    glm::degrees(camera_transform.rotation.y),
-                    glm::degrees(camera_transform.rotation.z));
-                ImGui::Separator();
-                ImGui::Text("Controls:");
-                ImGui::BulletText("ESC - Toggle UI mode");
-                ImGui::BulletText("WASD - Move camera");
-                ImGui::BulletText("Mouse - Look around");
-                ImGui::BulletText("Space - Move up");
-                ImGui::BulletText("Shift - Move down");
-                ImGui::End();
+                ::ImGui::EndMainMenuBar();
             }
 
             // Scene hierarchy window
-            if (show_hierarchy) {
-                ImGui::Begin("Scene Hierarchy", &show_hierarchy);
-                ImGui::Text("Scene objects will appear here");
-                // TODO: Show scene hierarchy tree
-                ImGui::End();
-            }
+            ::ImGui::Begin("Scene Hierarchy");
+            ::ImGui::Text("Scene: %s", scene.get_name().c_str());
+            ::ImGui::Separator();
 
-            // Scene window (viewport)
-            if (show_scene_window) {
-                ImGui::Begin("Scene View", &show_scene_window);
-                ImGui::Text("3D scene will render here");
-                // TODO: Render scene to texture and display in ImGui window
-                ImGui::End();
+            if (::ImGui::TreeNode("Game Objects")) {
+                ::ImGui::Text("Count: %zu", scene.get_game_objects().size());
+                for (const auto& [id, obj] : scene.get_game_objects()) {
+                    ::ImGui::BulletText("Object %u", id);
+                }
+                ::ImGui::TreePop();
             }
+            ::ImGui::End();
 
-            // ImGui demo window for testing
-            if (show_demo) {
-                ImGui::ShowDemoWindow(&show_demo);
+            // Properties window
+            ::ImGui::Begin("Properties");
+            ::ImGui::Text("Select an object to edit properties");
+            ::ImGui::End();
+
+            // Viewport stats
+            ::ImGui::Begin("Viewport Stats");
+            ::ImGui::Text("FPS: %.1f", ::ImGui::GetIO().Framerate);
+            ::ImGui::Text("Frame Time: %.3f ms", 1000.0f / ::ImGui::GetIO().Framerate);
+            ::ImGui::Separator();
+
+            auto& cam_transform = scene.get_camera_transform();
+            ::ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)",
+                cam_transform.translation.x,
+                cam_transform.translation.y,
+                cam_transform.translation.z);
+            ::ImGui::Text("Camera Rotation: (%.2f, %.2f, %.2f)",
+                glm::degrees(cam_transform.rotation.x),
+                glm::degrees(cam_transform.rotation.y),
+                glm::degrees(cam_transform.rotation.z));
+
+            ::ImGui::Separator();
+            ::ImGui::Text("Controls:");
+            ::ImGui::BulletText("F1 - Toggle Camera Mode");
+            ::ImGui::BulletText("WASD - Move Camera (Scene mode)");
+            ::ImGui::BulletText("Mouse - Rotate Camera (Scene mode)");
+            ::ImGui::End();
+
+            // Renderer settings
+            ::ImGui::Begin("Renderer Settings");
+            bool debug_rendering = engine.is_debug_rendering_enabled();
+            if (::ImGui::Checkbox("Debug Rendering", &debug_rendering)) {
+                engine.set_debug_rendering_enabled(debug_rendering);
             }
+            ::ImGui::End();
+
+            // Console window
+            ::ImGui::Begin("Console");
+            ::ImGui::TextWrapped("Editor console output will appear here");
+            ::ImGui::End();
         });
 
+        FED_INFO("Starting editor");
+
         // Run the engine (blocks until exit)
-        FED_INFO("Starting Klingon Editor");
         engine.run();
-        FED_INFO("Editor exited cleanly");
 
         return EXIT_SUCCESS;
-    } catch (const std::exception &e) {
+    }
+    catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }

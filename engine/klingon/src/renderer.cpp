@@ -1,14 +1,22 @@
 #include "klingon/renderer.hpp"
 #include "klingon/imgui_context.hpp"
+#include "klingon/scene.hpp"
+#include "klingon/render_graph.hpp"
+#include "klingon/frame_info.hpp"
+#include "klingon/render_systems/simple_render_system.hpp"
+#include "klingon/render_systems/point_light_system.hpp"
 #include "borg/window.hpp"
 #include "batleth/instance.hpp"
 #include "batleth/device.hpp"
 #include "batleth/swapchain.hpp"
 #include "batleth/shader.hpp"
 #include "batleth/pipeline.hpp"
+#include "batleth/buffer.hpp"
+#include "batleth/descriptors.hpp"
 #include "federation/log.hpp"
 
 #include <GLFW/glfw3.h>
+#include <glm/gtc/constants.hpp>
 #include <array>
 #include <stdexcept>
 #include <vector>
@@ -743,6 +751,281 @@ auto Renderer::find_depth_format() -> VkFormat {
     }
 
     throw std::runtime_error("Failed to find supported depth format");
+}
+
+// ===== Scene Rendering API (Stage 2) =====
+
+auto Renderer::create_global_descriptors() -> void {
+    FED_INFO("Creating global descriptors for scene rendering");
+
+    // Create descriptor set layout
+    m_global_set_layout = batleth::DescriptorSetLayout::Builder(m_device->get_logical_device())
+        .add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS)
+        .build();
+
+    // Create UBO buffers (one per frame in flight)
+    m_ubo_buffers.clear();
+    for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto buffer = std::make_unique<batleth::Buffer>(
+            *m_device,
+            sizeof(GlobalUbo),
+            1,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+        );
+        buffer->map();
+        m_ubo_buffers.push_back(std::move(buffer));
+    }
+
+    // Create descriptor pool
+    m_global_descriptor_pool = batleth::DescriptorPool::Builder(m_device->get_logical_device())
+        .set_max_sets(MAX_FRAMES_IN_FLIGHT)
+        .add_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT)
+        .build();
+
+    // Allocate and write descriptor sets
+    m_global_descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+    for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto buffer_info = m_ubo_buffers[i]->descriptor_info();
+        batleth::DescriptorWriter(*m_global_set_layout, *m_global_descriptor_pool)
+            .write_buffer(0, &buffer_info)
+            .build(m_global_descriptor_sets[i]);
+    }
+
+    FED_INFO("Created {} global descriptor sets", m_global_descriptor_sets.size());
+}
+
+auto Renderer::update_camera_from_scene(Scene* scene) -> void {
+    if (!scene) return;
+
+    auto& camera = scene->get_camera();
+    auto& transform = scene->get_camera_transform();
+
+    // Update view matrix from transform
+    camera.set_view_yxz(transform.translation, transform.rotation);
+
+    // Update projection from window size
+    auto extent = m_swapchain->get_extent();
+    float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    camera.set_perspective_projection(
+        glm::radians(60.0f),  // FOV
+        aspect,
+        0.1f,                 // Near plane
+        100.0f                // Far plane
+    );
+}
+
+auto Renderer::update_global_ubo(Scene* scene) -> void {
+    if (!scene) return;
+
+    auto& camera = scene->get_camera();
+
+    // Update camera matrices
+    m_current_ubo.projection = camera.get_projection();
+    m_current_ubo.view = camera.get_view();
+    m_current_ubo.ambient_light_color = scene->get_ambient_light();
+
+    // Update lights via PointLightSystem
+    if (m_point_light_system) {
+        FrameInfo temp_info{
+            static_cast<int>(m_current_frame),
+            0.0f,  // delta_time not needed for update
+            VK_NULL_HANDLE,  // command buffer not needed for update
+            camera,
+            VK_NULL_HANDLE,  // descriptor set not needed for update
+            scene->get_game_objects()
+        };
+        m_point_light_system->update(temp_info, m_current_ubo);
+    }
+
+    // Write to device buffer
+    m_ubo_buffers[m_current_frame]->write_to_buffer(&m_current_ubo);
+    m_ubo_buffers[m_current_frame]->flush();
+}
+
+auto Renderer::build_default_render_graph() -> void {
+    FED_INFO("Building default render graph");
+
+    auto extent = m_swapchain->get_extent();
+
+    // Create descriptors if not already created
+    if (!m_global_set_layout) {
+        create_global_descriptors();
+    }
+
+    // Create render systems if not already created
+    if (!m_simple_render_system) {
+        m_simple_render_system = std::make_unique<SimpleRenderSystem>(
+            *m_device,
+            m_swapchain->get_format(),
+            m_global_set_layout->get_layout()
+        );
+    }
+
+    if (!m_point_light_system) {
+        m_point_light_system = std::make_unique<PointLightSystem>(
+            *m_device,
+            m_swapchain->get_format(),
+            m_global_set_layout->get_layout()
+        );
+    }
+
+    // Create render graph
+    m_render_graph = std::make_unique<RenderGraph>(*this);
+
+    auto& builder = m_render_graph->begin_build();
+
+    // Create depth buffer as transient resource
+    auto depth_buffer = builder.create_image(
+        "depth",
+        batleth::ImageResourceDesc::create_2d(
+            m_depth_format,
+            extent.width,
+            extent.height,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+        )
+    );
+
+    // Get backbuffer handle
+    auto backbuffer = m_render_graph->get_backbuffer_handle();
+
+    // Main geometry pass
+    builder.add_graphics_pass(
+        "geometry",
+        [this, depth_buffer, backbuffer](const batleth::PassExecutionContext& ctx) {
+            if (!m_active_scene) return;
+
+            // Create frame info
+            FrameInfo frame_info{
+                static_cast<int>(ctx.frame_index),
+                ctx.delta_time,
+                ctx.command_buffer,
+                m_active_scene->get_camera(),
+                m_global_descriptor_sets[ctx.frame_index],
+                m_active_scene->get_game_objects()
+            };
+
+            // Render game objects
+            m_simple_render_system->render(frame_info);
+
+            if (m_debug_rendering_enabled) {
+                // Render point lights
+                m_point_light_system->render(frame_info);
+            }
+
+            // Render custom systems
+            for (auto& system : m_custom_render_systems) {
+                system->render(frame_info);
+            }
+        }
+    )
+    .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
+    .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
+    .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
+    .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+
+    // ImGui pass (if enabled)
+    if (m_imgui_context) {
+        builder.add_graphics_pass(
+            "imgui",
+            [this, depth_buffer, backbuffer](const batleth::PassExecutionContext& ctx) {
+                m_imgui_context->render(ctx.command_buffer);
+            }
+        )
+        .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_LOAD, {{0.01f, 0.01f, 0.01f, 1.0f}})
+        .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
+        .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+    }
+
+    m_render_graph->compile();
+    m_last_render_extent = extent;
+
+    FED_INFO("Render graph compiled with {} passes", m_render_graph->get_pass_count());
+}
+
+auto Renderer::should_rebuild_render_graph() const -> bool {
+    if (!m_render_graph) return true;
+
+    auto current_extent = m_swapchain->get_extent();
+    if (current_extent.width != m_last_render_extent.width ||
+        current_extent.height != m_last_render_extent.height) {
+        return true;
+    }
+
+    return false;
+}
+
+auto Renderer::invalidate_render_graph() -> void {
+    FED_INFO("Render graph invalidated - will rebuild on next frame");
+    m_render_graph.reset();
+}
+
+auto Renderer::set_debug_rendering_enabled(bool enabled) -> void {
+    m_debug_rendering_enabled = enabled;
+}
+
+auto Renderer::is_debug_rendering_enabled() const -> bool {
+    return m_debug_rendering_enabled;
+}
+
+auto Renderer::set_imgui_callback(ImGuiCallback callback) -> void {
+    m_imgui_callback = std::move(callback);
+}
+
+auto Renderer::render_scene(Scene* scene, float delta_time) -> void {
+    if (!scene) {
+        FED_WARN("render_scene called with null scene");
+        return;
+    }
+
+    m_active_scene = scene;
+
+    // Rebuild render graph if needed
+    if (should_rebuild_render_graph()) {
+        FED_INFO("Rebuilding render graph due to resize or invalidation");
+        build_default_render_graph();
+    }
+
+    // Begin frame (acquires swapchain image and begins ImGui frame)
+    if (!begin_frame()) {
+        return;  // Frame not ready (e.g., window minimized)
+    }
+
+    // Call ImGui callback if enabled (after begin_frame() has started ImGui frame)
+    if (m_imgui_context && m_imgui_callback) {
+        m_imgui_callback();
+        m_imgui_context->end_frame();
+    }
+
+    // Update camera matrices from scene
+    update_camera_from_scene(scene);
+
+    // Update global UBO from scene
+    update_global_ubo(scene);
+
+    // Begin command buffer
+    auto cmd = get_current_command_buffer();
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = 0;
+    ::vkBeginCommandBuffer(cmd, &begin_info);
+
+    // Set backbuffer with current swapchain image
+    m_render_graph->set_backbuffer(
+        m_swapchain->get_images()[m_current_image_index],
+        m_swapchain->get_image_views()[m_current_image_index],
+        m_swapchain->get_format(),
+        m_swapchain->get_extent()
+    );
+
+    // Execute render graph
+    m_render_graph->execute(cmd, m_current_frame, delta_time);
+
+    // End command buffer
+    ::vkEndCommandBuffer(cmd);
+
+    // End frame (submits command buffer, presents image)
+    end_frame();
 }
 
 } // namespace klingon

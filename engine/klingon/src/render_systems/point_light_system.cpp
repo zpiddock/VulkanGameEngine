@@ -13,7 +13,9 @@
 namespace klingon {
 
 PointLightSystem::PointLightSystem(batleth::Device& device, VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout)
-    : m_device{device} {
+    : m_device{device}
+    , m_global_set_layout{global_set_layout}
+    , m_swapchain_format{swapchain_format} {
     create_pipeline(swapchain_format, global_set_layout);
 }
 
@@ -122,6 +124,13 @@ auto PointLightSystem::render(FrameInfo& frame_info) -> void {
         // Draw billboard quad (6 vertices generated in vertex shader)
         ::vkCmdDraw(frame_info.command_buffer, 6, 1, 0, 0);
     }
+}
+
+auto PointLightSystem::on_swapchain_recreate(VkFormat format) -> void {
+    FED_INFO("PointLightSystem rebuilding pipeline for new swapchain format");
+    m_swapchain_format = format;
+    m_pipeline.reset();
+    create_pipeline(format, m_global_set_layout);
 }
 
 } // namespace klingon

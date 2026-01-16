@@ -122,14 +122,12 @@ namespace klingon {
     }
 
     auto ImGuiContext::end_frame() -> void {
-        // Note: ::ImGui::Render() is called in render() to ensure draw data
-        // is ready when we need it for Vulkan command recording
+        // Finalize ImGui frame and generate draw data
+        ::ImGui::Render();
     }
 
     auto ImGuiContext::render(VkCommandBuffer command_buffer) -> void {
-        // Finalize ImGui frame and generate draw data
-        ::ImGui::Render();
-
+        // Draw data should already be ready from end_frame()
         ImGui_ImplVulkan_RenderDrawData(::ImGui::GetDrawData(), command_buffer);
 
         // Update and render additional platform windows (if multi-viewport is enabled)

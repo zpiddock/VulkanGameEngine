@@ -21,6 +21,7 @@ namespace klingon {
 
 class Renderer;
 class RenderGraph;
+class Scene;
 
 /**
  * Main engine class that orchestrates all subsystems.
@@ -41,11 +42,9 @@ public:
         bool enable_imgui = false;  // Enable ImGui for editor
     };
 
-    // Callback types
+    // Callback types (old render callbacks removed)
     using UpdateCallback = std::function<void(float delta_time)>;
-    using RenderCallback = std::function<void()>;
     using ImGuiCallback = std::function<void()>;
-    using RenderGraphCallback = std::function<void(VkCommandBuffer cmd, std::uint32_t frame_index, float delta_time)>;
 
     explicit Engine(const Config& config);
     ~Engine();
@@ -62,24 +61,30 @@ public:
     auto set_update_callback(UpdateCallback callback) -> void { m_update_callback = callback; }
 
     /**
-     * Set callback for custom rendering
-     * @param callback Function called during rendering phase
-     */
-    auto set_render_callback(RenderCallback callback) -> void { m_render_callback = callback; }
-
-    /**
      * Set callback for ImGui rendering
      * @param callback Function called during ImGui phase (if enabled)
      */
-    auto set_imgui_callback(ImGuiCallback callback) -> void { m_imgui_callback = callback; }
+    auto set_imgui_callback(ImGuiCallback callback) -> void;
 
     /**
-     * Set callback for render graph based rendering.
-     * When set, bypasses begin_rendering/end_rendering calls.
-     * The callback receives the command buffer and is responsible for all rendering.
-     * @param callback Function called with command buffer, frame index, and delta time
+     * Set the active scene for rendering
+     * @param scene Pointer to scene (must outlive engine rendering calls)
      */
-    auto set_render_graph_callback(RenderGraphCallback callback) -> void { m_render_graph_callback = callback; }
+    auto set_active_scene(Scene* scene) -> void { m_active_scene = scene; }
+
+    /**
+     * Get the currently active scene
+     * @return Pointer to active scene, or nullptr if none set
+     */
+    auto get_active_scene() -> Scene* { return m_active_scene; }
+    auto get_active_scene() const -> const Scene* { return m_active_scene; }
+
+    /**
+     * Enable/disable debug rendering (point lights, etc.)
+     * @param enabled true to enable debug rendering
+     */
+    auto set_debug_rendering_enabled(bool enabled) -> void;
+    auto is_debug_rendering_enabled() const -> bool;
 
     /**
      * Run the main game loop
@@ -96,9 +101,6 @@ public:
     auto get_renderer() -> Renderer& { return *m_renderer; };
     auto get_input() -> borg::Input& { return *m_input; };
 
-    // TODO: Move in to debug config
-    bool m_debug_render = true;
-
 private:
     std::unique_ptr<federation::Core> m_core;
     std::unique_ptr<borg::Window> m_window;
@@ -107,9 +109,10 @@ private:
 
     // Application callbacks
     UpdateCallback m_update_callback;
-    RenderCallback m_render_callback;
     ImGuiCallback m_imgui_callback;
-    RenderGraphCallback m_render_graph_callback;
+
+    // Scene management
+    Scene* m_active_scene = nullptr;
 
     bool m_running = false;
     float m_last_frame_time = 0.0f;

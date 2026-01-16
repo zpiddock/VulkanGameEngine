@@ -3,8 +3,10 @@
 #include <memory>
 #include <cstdint>
 #include <vector>
+#include <functional>
 #include <vulkan/vulkan.h>
 
+#include "frame_info.hpp"
 #include "imgui_context.hpp"
 #include "batleth/device.hpp"
 #include "batleth/instance.hpp"
@@ -12,6 +14,8 @@
 #include "batleth/pipeline.hpp"
 #include "batleth/shader.hpp"
 #include "batleth/swapchain.hpp"
+#include "batleth/buffer.hpp"
+#include "batleth/descriptors.hpp"
 
 #ifdef _WIN32
     #ifdef KLINGON_EXPORTS
@@ -23,7 +27,16 @@
     #define KLINGON_API
 #endif
 
+namespace borg { class Window; }
+
 namespace klingon {
+
+class Scene;
+class RenderGraph;
+class IRenderSystem;
+class SimpleRenderSystem;
+class PointLightSystem;
+struct GlobalUbo;
 
 /**
  * Manages the Vulkan rendering pipeline and resources.
@@ -82,6 +95,30 @@ public:
     // Device access for render systems
     auto get_device_ref() -> batleth::Device& { return *m_device; }
 
+    // Scene rendering (new Scene API)
+    auto render_scene(Scene* scene, float delta_time) -> void;
+
+    // ImGui callback
+    using ImGuiCallback = std::function<void()>;
+    auto set_imgui_callback(ImGuiCallback callback) -> void;
+
+    // Custom render system registration
+    template<typename T, typename... Args>
+    auto register_render_system(Args&&... args) -> T* {
+        auto system = std::make_unique<T>(std::forward<Args>(args)...);
+        T* ptr = system.get();
+        m_custom_render_systems.push_back(std::move(system));
+        invalidate_render_graph();
+        return ptr;
+    }
+
+    // Manual invalidation
+    auto invalidate_render_graph() -> void;
+
+    // Debug settings
+    auto set_debug_rendering_enabled(bool enabled) -> void;
+    auto is_debug_rendering_enabled() const -> bool;
+
 private:
     auto create_instance() -> void;
     auto create_device() -> void;
@@ -97,6 +134,13 @@ private:
     auto cleanup_depth_resources() -> void;
     auto record_command_buffer(VkCommandBuffer command_buffer, std::uint32_t image_index) -> void;
     auto find_depth_format() -> VkFormat;
+
+    // Render graph and scene management
+    auto build_default_render_graph() -> void;
+    auto should_rebuild_render_graph() const -> bool;
+    auto update_global_ubo(Scene* scene) -> void;
+    auto update_camera_from_scene(Scene* scene) -> void;
+    auto create_global_descriptors() -> void;
 
 
     borg::Window& m_window;
@@ -137,6 +181,27 @@ private:
     std::uint32_t m_current_frame = 0;
     std::uint32_t m_current_image_index = 0;
     bool m_framebuffer_resized = false;
+
+    // Render graph and scene (Stage 2 additions)
+    std::unique_ptr<RenderGraph> m_render_graph;
+    Scene* m_active_scene = nullptr;
+    VkExtent2D m_last_render_extent = {0, 0};
+
+    // UBO and descriptors
+    std::unique_ptr<batleth::DescriptorSetLayout> m_global_set_layout;
+    std::unique_ptr<batleth::DescriptorPool> m_global_descriptor_pool;
+    std::vector<VkDescriptorSet> m_global_descriptor_sets;
+    std::vector<std::unique_ptr<batleth::Buffer>> m_ubo_buffers;
+    GlobalUbo m_current_ubo;
+
+    // Render systems
+    std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
+    std::unique_ptr<PointLightSystem> m_point_light_system;
+    std::vector<std::unique_ptr<IRenderSystem>> m_custom_render_systems;
+    bool m_debug_rendering_enabled = true;
+
+    // ImGui callback
+    ImGuiCallback m_imgui_callback;
 };
 
 } // namespace klingon

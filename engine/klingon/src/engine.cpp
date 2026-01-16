@@ -1,5 +1,6 @@
 #include "klingon/engine.hpp"
 #include "klingon/renderer.hpp"
+#include "klingon/scene.hpp"
 #include "federation/core.hpp"
 #include "federation/log.hpp"
 #include "borg/window.hpp"
@@ -68,52 +69,9 @@ auto Engine::run() -> void {
             m_update_callback(delta_time);
         }
 
-        // Begin rendering
-        if (m_renderer->begin_frame()) {
-            // Check if using render graph callback (bypasses begin_rendering/end_rendering)
-            if (m_render_graph_callback) {
-                // Render graph mode: user handles all rendering through the graph
-                auto cmd = m_renderer->get_current_command_buffer();
-                auto frame_index = m_renderer->get_current_frame_index();
-
-                // Begin command buffer
-                VkCommandBufferBeginInfo begin_info{};
-                begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-                begin_info.flags = 0;
-                ::vkBeginCommandBuffer(cmd, &begin_info);
-
-                // ImGui callback (if ImGui is enabled) - need to submit to the command buffer
-                if (m_imgui_callback && m_renderer->has_imgui()) {
-                    m_imgui_callback();
-                }
-
-                // Execute render graph callback
-                m_render_graph_callback(cmd, frame_index, delta_time);
-
-
-                // m_renderer->end_rendering();
-                // End command buffer
-                ::vkEndCommandBuffer(cmd);
-            }
-            else {
-                // Legacy mode: use begin_rendering/end_rendering
-                m_renderer->begin_rendering();
-
-                // Render callback (custom rendering)
-                if (m_render_callback) {
-                    m_render_callback();
-                }
-
-                // ImGui callback (if ImGui is enabled)
-                if (m_imgui_callback && m_renderer->has_imgui()) {
-                    m_imgui_callback();
-                }
-
-                // End render pass and finish command buffer recording
-                m_renderer->end_rendering();
-            }
-
-            m_renderer->end_frame();
+        // Render scene (handles everything: camera updates, UBO, render graph execution, ImGui)
+        if (m_active_scene) {
+            m_renderer->render_scene(m_active_scene, delta_time);
         }
     }
 
@@ -145,4 +103,21 @@ auto Engine::shutdown() -> void {
     FED_INFO("Bye bye!");
     FED_DEBUG("Engine shutdown complete");
 }
+
+auto Engine::set_debug_rendering_enabled(bool enabled) -> void {
+    m_renderer->set_debug_rendering_enabled(enabled);
+}
+
+auto Engine::is_debug_rendering_enabled() const -> bool {
+    return m_renderer->is_debug_rendering_enabled();
+}
+
+auto Engine::set_imgui_callback(ImGuiCallback callback) -> void {
+    m_imgui_callback = callback;
+    // Pass to renderer immediately so it's ready when rendering starts
+    if (m_renderer) {
+        m_renderer->set_imgui_callback(m_imgui_callback);
+    }
+}
+
 } // namespace klingon
