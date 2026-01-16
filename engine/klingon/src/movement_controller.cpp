@@ -4,6 +4,7 @@
 
 namespace klingon {
 
+    // TODO: Remove references to GLFWwindow and use our Window wrapper
 auto MovementController::update(GLFWwindow* window, float delta_time, Transform& transform) -> void {
     // Don't move if in UI mode
     if (m_ui_mode) {

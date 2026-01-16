@@ -82,15 +82,14 @@ auto Engine::run() -> void {
                 begin_info.flags = 0;
                 ::vkBeginCommandBuffer(cmd, &begin_info);
 
+                // ImGui callback (if ImGui is enabled) - need to submit to the command buffer
+                if (m_imgui_callback && m_renderer->has_imgui()) {
+                    m_imgui_callback();
+                }
+
                 // Execute render graph callback
                 m_render_graph_callback(cmd, frame_index, delta_time);
 
-                // ImGui callback (if ImGui is enabled) - needs to be rendered into the graph
-                if (m_imgui_callback && m_renderer->has_imgui()) {
-                    m_imgui_callback();
-                    // Make sure we actually send the imgui commands to the command buffer
-                    m_renderer->get_imgui_context()->render(cmd);
-                }
 
                 // m_renderer->end_rendering();
                 // End command buffer
@@ -142,6 +141,8 @@ auto Engine::shutdown() -> void {
         m_core->shutdown();
     }
 
+    FED_DEBUG("All RAII-wrapped resources destroyed");
+    FED_INFO("Bye bye!");
     FED_DEBUG("Engine shutdown complete");
 }
 } // namespace klingon

@@ -204,12 +204,24 @@ auto main() -> int {
                     // Render game objects
                     simple_render_system->render_game_objects(frame_info);
 
-                    // Render point lights
-                    point_light_system->render(frame_info);
+                    if (engine.m_debug_render) {
+                        // Render point lights
+                        point_light_system->render(frame_info);
+                    }
                 }
             )
             .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
             .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
+            .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
+            .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+
+            builder.add_graphics_pass(
+                "imgui",
+                [&, depth_buffer, backbuffer](const batleth::PassExecutionContext& ctx) {
+                    engine.get_renderer().get_imgui_context()->render(ctx.command_buffer);
+                }
+            )
+            .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_LOAD, {{0.01f, 0.01f, 0.01f, 1.0f}})
             .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
             .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
 
@@ -303,6 +315,9 @@ auto main() -> int {
                     ::ImGui::BulletText("Mouse - Look around");
                     ::ImGui::BulletText("Space - Move up");
                     ::ImGui::BulletText("Shift - Move down");
+                    ::ImGui::Separator();
+                    ::ImGui::Text("Debug Rendering Settings:");
+                    ::ImGui::Checkbox("Enable Debug Rendering", &engine.m_debug_render);
                     ::ImGui::End();
             }
         });

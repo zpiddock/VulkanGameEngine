@@ -96,6 +96,8 @@ public:
     auto get_renderer() -> Renderer& { return *m_renderer; };
     auto get_input() -> borg::Input& { return *m_input; };
 
+    // TODO: Move in to debug config
+    bool m_debug_render = true;
 
 private:
     std::unique_ptr<federation::Core> m_core;
