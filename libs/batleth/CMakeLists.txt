@@ -8,12 +8,10 @@ add_library(batleth SHARED
         src/buffer.cpp
         src/descriptors.cpp
         src/swapchain.cpp
-        src/render_pass.cpp
         src/shader.cpp
         src/shader_compiler.cpp
         src/shader_cache.cpp
         src/pipeline.cpp
-        src/framebuffer.cpp
         src/command_buffer.cpp
         src/render_graph_resource.cpp
         src/barrier_batcher.cpp

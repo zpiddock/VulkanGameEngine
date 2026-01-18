@@ -141,10 +141,6 @@ namespace klingon {
 
         auto create_depth_resources() -> void;
 
-        auto create_shaders() -> void;
-
-        auto create_pipeline() -> void;
-
         auto create_command_pool() -> void;
 
         auto create_command_buffers() -> void;
@@ -154,8 +150,6 @@ namespace klingon {
         auto recreate_swapchain() -> void;
 
         auto cleanup_depth_resources() -> void;
-
-        auto record_command_buffer(VkCommandBuffer command_buffer, std::uint32_t image_index) -> void;
 
         auto find_depth_format() -> VkFormat;
 
@@ -192,8 +186,6 @@ namespace klingon {
         std::vector<VkCommandBuffer> m_command_buffers;
 
         // Rendering resources (destroyed before device)
-        std::vector<std::unique_ptr<batleth::Shader> > m_shaders;
-        std::unique_ptr<batleth::Pipeline> m_pipeline;
         std::unique_ptr<batleth::Swapchain> m_swapchain;
 
         // Depth resources
