@@ -1,5 +1,6 @@
 #include "klingon/render_systems/point_light_system.hpp"
 
+#include <map>
 #include <ranges>
 
 #include "federation/log.hpp"
@@ -88,8 +89,18 @@ namespace klingon {
     }
 
     auto PointLightSystem::render(FrameInfo &frame_info) -> void {
-        // Bind pipeline
-        ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
+
+        std::map<float, GameObject::id_t> sorted_objs;
+        for (auto &[id, obj]: frame_info.game_objects) {
+            if (obj.point_light == nullptr) continue;
+
+            auto offset = frame_info.camera.get_position() - obj.transform.translation;
+            float disSquared = glm::dot(offset, offset);
+            sorted_objs[disSquared] = id;
+        }
+
+            // Bind pipeline
+            ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
         // Bind descriptor sets
         ::vkCmdBindDescriptorSets(
@@ -104,7 +115,8 @@ namespace klingon {
         );
 
         // Render each point light
-        for (auto &obj: frame_info.game_objects | std::views::values) {
+        for (auto &[_, obj_index]: sorted_objs | std::views::reverse) {
+            auto& obj = frame_info.game_objects.at(obj_index);
             if (obj.point_light == nullptr) continue;
 
             PointLightPushConstants push{};
