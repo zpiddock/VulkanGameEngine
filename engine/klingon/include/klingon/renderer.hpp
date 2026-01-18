@@ -18,6 +18,7 @@
 #include "batleth/descriptors.hpp"
 #include "render_systems/point_light_system.hpp"
 #include "render_systems/simple_render_system.hpp"
+#include "render_systems/deferred_lighting_system.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -215,10 +216,17 @@ namespace klingon {
         GlobalUbo m_current_ubo;
 
         // Render systems
-        std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
+        std::unique_ptr<GBufferRenderSystem> m_gbuffer_render_system;  // Renamed from m_simple_render_system
+        std::unique_ptr<DeferredLightingSystem> m_deferred_lighting_system;  // New
         std::unique_ptr<PointLightSystem> m_point_light_system;
         std::vector<std::unique_ptr<IRenderSystem> > m_custom_render_systems;
         bool m_debug_rendering_enabled = true;
+
+        // Deferred rendering descriptor sets
+        std::unique_ptr<batleth::DescriptorSetLayout> m_gbuffer_descriptor_layout;
+        std::unique_ptr<batleth::DescriptorPool> m_gbuffer_descriptor_pool;
+        std::vector<VkDescriptorSet> m_gbuffer_descriptor_sets;
+        VkSampler m_gbuffer_sampler = VK_NULL_HANDLE;
 
         // ImGui callback
         ImGuiCallback m_imgui_callback;

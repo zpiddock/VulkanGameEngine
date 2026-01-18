@@ -76,6 +76,11 @@ namespace klingon {
         // Cleanup depth resources
         cleanup_depth_resources();
 
+        // Destroy sampler
+        if (m_gbuffer_sampler != VK_NULL_HANDLE) {
+            ::vkDestroySampler(m_device->get_logical_device(), m_gbuffer_sampler, nullptr);
+        }
+
         // All RAII-wrapped resources (swapchain, surface, imgui_context, pipeline,
         // shaders, device, instance) are automatically destroyed in correct order
         // via C++ member destruction (reverse of declaration order)
@@ -652,6 +657,54 @@ namespace klingon {
         }
 
         FED_INFO("Created {} global descriptor sets", m_global_descriptor_sets.size());
+
+        // Create G-buffer descriptor set layout (3 sampled textures)
+        m_gbuffer_descriptor_layout = batleth::DescriptorSetLayout::Builder(m_device->get_logical_device())
+                .add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)  // Position
+                .add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)  // Normal
+                .add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)  // Albedo
+                .build();
+
+        // Create G-buffer descriptor pool
+        m_gbuffer_descriptor_pool = batleth::DescriptorPool::Builder(m_device->get_logical_device())
+                .set_max_sets(MAX_FRAMES_IN_FLIGHT)
+                .add_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 * MAX_FRAMES_IN_FLIGHT)
+                .build();
+
+        // Allocate G-buffer descriptor sets (one per frame)
+        // We'll update these with actual image views when building the render graph
+        m_gbuffer_descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+        for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            m_gbuffer_descriptor_pool->allocate_descriptor_set(
+                    m_gbuffer_descriptor_layout->get_layout(),
+                    m_gbuffer_descriptor_sets[i]
+            );
+        }
+
+        // Create sampler for G-buffer sampling
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_NEAREST;  // Nearest for screen-space textures
+        sampler_info.minFilter = VK_FILTER_NEAREST;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.anisotropyEnable = VK_FALSE;
+        sampler_info.maxAnisotropy = 1.0f;
+        sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        sampler_info.unnormalizedCoordinates = VK_FALSE;
+        sampler_info.compareEnable = VK_FALSE;
+        sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler_info.mipLodBias = 0.0f;
+        sampler_info.minLod = 0.0f;
+        sampler_info.maxLod = 0.0f;
+
+        if (::vkCreateSampler(m_device->get_logical_device(), &sampler_info, nullptr, &m_gbuffer_sampler) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create G-buffer sampler");
+        }
+
+        FED_INFO("Created deferred rendering descriptors successfully");
     }
 
     auto Renderer::update_camera_from_scene(Scene *scene, float delta_time) -> void {
@@ -685,11 +738,24 @@ namespace klingon {
         m_current_ubo.inverseView = camera.get_inverse_view();
         m_current_ubo.ambient_light_color = scene->get_ambient_light();
 
-        // Update lights via PointLightSystem
+        // Extract light data directly from scene (independent of PointLightSystem)
+        int light_index = 0;
+        for (auto &[id, obj]: scene->get_game_objects()) {
+            if (obj.point_light == nullptr) continue;
+            if (light_index >= MAX_LIGHTS) break;
+
+            // Update UBO with light data
+            m_current_ubo.point_lights[light_index].position = glm::vec4(obj.transform.translation, 1.f);
+            m_current_ubo.point_lights[light_index].color = glm::vec4(obj.color, obj.point_light->light_intensity);
+            light_index++;
+        }
+        m_current_ubo.num_lights = light_index;
+
+        // Update lights via PointLightSystem for animation/rotation (if present)
         if (m_point_light_system) {
             FrameInfo temp_info{
                 static_cast<int>(m_current_frame),
-                delta_time, // delta_time not needed for update
+                delta_time,
                 VK_NULL_HANDLE, // command buffer not needed for update
                 camera,
                 VK_NULL_HANDLE, // descriptor set not needed for update
@@ -714,11 +780,19 @@ namespace klingon {
         }
 
         // Create render systems if not already created
-        if (!m_simple_render_system) {
-            m_simple_render_system = std::make_unique<SimpleRenderSystem>(
+        if (!m_gbuffer_render_system) {
+            m_gbuffer_render_system = std::make_unique<GBufferRenderSystem>(
+                *m_device,
+                m_global_set_layout->get_layout()
+            );
+        }
+
+        if (!m_deferred_lighting_system) {
+            m_deferred_lighting_system = std::make_unique<DeferredLightingSystem>(
                 *m_device,
                 m_swapchain->get_format(),
-                m_global_set_layout->get_layout()
+                m_global_set_layout->get_layout(),
+                m_gbuffer_descriptor_layout->get_layout()
             );
         }
 
@@ -734,28 +808,51 @@ namespace klingon {
         m_render_graph = std::make_unique<RenderGraph>(*this);
 
         auto &builder = m_render_graph->begin_build();
+        auto backbuffer = m_render_graph->get_backbuffer_handle();
 
-        // Create depth buffer as transient resource
+        // Create G-buffer resources (transient)
+        auto gbuffer_position = builder.create_image(
+            "gbuffer_position",
+            batleth::ImageResourceDesc::create_2d(
+                VK_FORMAT_R16G16B16A16_SFLOAT,
+                extent.width, extent.height,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            )
+        );
+
+        auto gbuffer_normal = builder.create_image(
+            "gbuffer_normal",
+            batleth::ImageResourceDesc::create_2d(
+                VK_FORMAT_R16G16B16A16_SFLOAT,
+                extent.width, extent.height,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            )
+        );
+
+        auto gbuffer_albedo = builder.create_image(
+            "gbuffer_albedo",
+            batleth::ImageResourceDesc::create_2d(
+                VK_FORMAT_R8G8B8A8_UNORM,
+                extent.width, extent.height,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            )
+        );
+
         auto depth_buffer = builder.create_image(
             "depth",
             batleth::ImageResourceDesc::create_2d(
                 m_depth_format,
-                extent.width,
-                extent.height,
+                extent.width, extent.height,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
             )
         );
 
-        // Get backbuffer handle
-        auto backbuffer = m_render_graph->get_backbuffer_handle();
-
-        // Main geometry pass
+        // Pass 1: G-buffer generation (replaces old "geometry" pass)
         builder.add_graphics_pass(
-                    "geometry",
-                    [this, depth_buffer, backbuffer](const batleth::PassExecutionContext &ctx) {
+                    "gbuffer_generation",
+                    [this](const batleth::PassExecutionContext &ctx) {
                         if (!m_active_scene) return;
 
-                        // Create frame info
                         FrameInfo frame_info{
                             static_cast<int>(ctx.frame_index),
                             ctx.delta_time,
@@ -765,36 +862,116 @@ namespace klingon {
                             m_active_scene->get_game_objects()
                         };
 
-                        // Render game objects
-                        m_simple_render_system->render(frame_info);
+                        m_gbuffer_render_system->render(frame_info);
+                    }
+                )
+                .set_color_attachment(0, gbuffer_position, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.0f, 0.0f, 0.0f, 0.0f}})
+                .set_color_attachment(1, gbuffer_normal, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.0f, 0.0f, 0.0f, 0.0f}})
+                .set_color_attachment(2, gbuffer_albedo, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.0f, 0.0f, 0.0f, 0.0f}})
+                .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
+                .write(gbuffer_position, batleth::ResourceUsage::ColorAttachment)
+                .write(gbuffer_normal, batleth::ResourceUsage::ColorAttachment)
+                .write(gbuffer_albedo, batleth::ResourceUsage::ColorAttachment)
+                .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
 
-                        if (m_debug_rendering_enabled) {
-                            // Render point lights
-                            m_point_light_system->render(frame_info);
-                        }
+        // Pass 2: Deferred lighting (new pass)
+        builder.add_graphics_pass(
+                    "deferred_lighting",
+                    [this, gbuffer_position, gbuffer_normal, gbuffer_albedo](const batleth::PassExecutionContext &ctx) {
+                        if (!m_active_scene) return;
 
-                        // Render custom systems
-                        for (auto &system: m_custom_render_systems) {
-                            system->render(frame_info);
-                        }
+                        // Update G-buffer descriptor set for this frame
+                        auto &descriptor_set = m_gbuffer_descriptor_sets[ctx.frame_index];
+
+                        // Get image views from render graph (cast to access CompiledRenderGraph)
+                        auto *compiled_graph = static_cast<const CompiledRenderGraph *>(ctx.graph);
+
+                        VkDescriptorImageInfo position_info{};
+                        position_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                        position_info.imageView = compiled_graph->get_image_view(gbuffer_position);
+                        position_info.sampler = m_gbuffer_sampler;
+
+                        VkDescriptorImageInfo normal_info{};
+                        normal_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                        normal_info.imageView = compiled_graph->get_image_view(gbuffer_normal);
+                        normal_info.sampler = m_gbuffer_sampler;
+
+                        VkDescriptorImageInfo albedo_info{};
+                        albedo_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                        albedo_info.imageView = compiled_graph->get_image_view(gbuffer_albedo);
+                        albedo_info.sampler = m_gbuffer_sampler;
+
+                        batleth::DescriptorWriter(*m_gbuffer_descriptor_layout, *m_gbuffer_descriptor_pool)
+                                .write_image(0, &position_info)
+                                .write_image(1, &normal_info)
+                                .write_image(2, &albedo_info)
+                                .overwrite(descriptor_set);
+
+                        m_deferred_lighting_system->set_gbuffer_descriptor_set(descriptor_set);
+
+                        FrameInfo frame_info{
+                            static_cast<int>(ctx.frame_index),
+                            ctx.delta_time,
+                            ctx.command_buffer,
+                            m_active_scene->get_camera(),
+                            m_global_descriptor_sets[ctx.frame_index],
+                            m_active_scene->get_game_objects()
+                        };
+
+                        m_deferred_lighting_system->render(frame_info);
                     }
                 )
                 .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
-                .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
-                .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
-                .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+                .read(gbuffer_position, batleth::ResourceUsage::SampledImage)
+                .read(gbuffer_normal, batleth::ResourceUsage::SampledImage)
+                .read(gbuffer_albedo, batleth::ResourceUsage::SampledImage)
+                .write(backbuffer, batleth::ResourceUsage::ColorAttachment);
 
-        // ImGui pass (if enabled)
+        // Pass 3: Debug visualization (point lights, etc.) - only if debug enabled
+        if (m_debug_rendering_enabled && m_point_light_system) {
+            builder.add_graphics_pass(
+                        "debug_visualization",
+                        [this](const batleth::PassExecutionContext &ctx) {
+                            if (!m_active_scene) return;
+
+                            FrameInfo frame_info{
+                                static_cast<int>(ctx.frame_index),
+                                ctx.delta_time,
+                                ctx.command_buffer,
+                                m_active_scene->get_camera(),
+                                m_global_descriptor_sets[ctx.frame_index],
+                                m_active_scene->get_game_objects()
+                            };
+
+                            if (m_debug_rendering_enabled) {
+                                // Render point light debug spheres
+                                if (m_point_light_system) {
+                                    m_point_light_system->render(frame_info);
+                                }
+
+                                // Render custom debug systems
+                                for (auto &system: m_custom_render_systems) {
+                                    system->render(frame_info);
+                                }
+                            }
+                        }
+                    )
+                    .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_LOAD, {{0.01f, 0.01f, 0.01f, 1.0f}})
+                    .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_LOAD, {1.0f, 0})
+                    .read(depth_buffer, batleth::ResourceUsage::DepthStencilRead)
+                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment);
+        }
+
+        // ImGui pass (if enabled) - unchanged
         if (m_imgui_context) {
             builder.add_graphics_pass(
                         "imgui",
-                        [this, depth_buffer, backbuffer](const batleth::PassExecutionContext &ctx) {
+                        [this](const batleth::PassExecutionContext &ctx) {
                             m_imgui_context->render(ctx.command_buffer);
                         }
                     )
                     .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_LOAD, {{0.01f, 0.01f, 0.01f, 1.0f}})
-                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
-                    .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment);
         }
 
         m_render_graph->compile();

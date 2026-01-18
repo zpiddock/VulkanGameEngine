@@ -20,18 +20,20 @@
 
 namespace klingon {
     /**
-     * Render system for standard mesh rendering with lighting.
-     * Uses push constants for per-object data and UBO for global scene data.
+     * Render system for G-buffer generation in deferred rendering.
+     * Outputs position, normal, and albedo to multiple render targets.
+     *
+     * This replaces the previous forward rendering approach.
      */
-    class KLINGON_API SimpleRenderSystem : public IRenderSystem {
+    class KLINGON_API GBufferRenderSystem : public IRenderSystem {
     public:
-        SimpleRenderSystem(batleth::Device &device, VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout);
+        GBufferRenderSystem(batleth::Device &device, VkDescriptorSetLayout global_set_layout);
 
-        ~SimpleRenderSystem() override;
+        ~GBufferRenderSystem() override;
 
-        SimpleRenderSystem(const SimpleRenderSystem &) = delete;
+        GBufferRenderSystem(const GBufferRenderSystem &) = delete;
 
-        SimpleRenderSystem &operator=(const SimpleRenderSystem &) = delete;
+        GBufferRenderSystem &operator=(const GBufferRenderSystem &) = delete;
 
         // IRenderSystem interface
         auto render(FrameInfo &frame_info) -> void override;
@@ -44,12 +46,14 @@ namespace klingon {
             glm::mat4 normal_matrix{1.f};
         };
 
-        auto create_pipeline(VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout) -> void;
+        auto create_pipeline(VkDescriptorSetLayout global_set_layout) -> void;
 
         batleth::Device &m_device;
         VkDescriptorSetLayout m_global_set_layout = VK_NULL_HANDLE;
-        VkFormat m_swapchain_format = VK_FORMAT_UNDEFINED;
         std::vector<std::unique_ptr<batleth::Shader> > m_shaders;
         std::unique_ptr<batleth::Pipeline> m_pipeline;
     };
+
+    // Legacy alias for compatibility during migration
+    using SimpleRenderSystem = GBufferRenderSystem;
 } // namespace klingon

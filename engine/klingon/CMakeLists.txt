@@ -11,6 +11,7 @@ add_library(klingon SHARED
         src/model/mesh.cpp
         src/game_object.cpp
         src/render_systems/simple_render_system.cpp
+        src/render_systems/deferred_lighting_system.cpp
         src/render_systems/point_light_system.cpp
         src/render_graph.cpp
         src/scene.cpp

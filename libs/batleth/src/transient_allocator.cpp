@@ -85,10 +85,24 @@ namespace batleth {
         alloc_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
         // For transient attachments, use lazy allocation if available
-        if (desc.is_transient &&
-            (desc.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT))) {
+        // BUT: Transient attachments can ONLY have COLOR_ATTACHMENT, DEPTH_STENCIL_ATTACHMENT, or INPUT_ATTACHMENT usage
+        // If the image is used as SAMPLED, STORAGE, or TRANSFER, it cannot be transient
+        const VkImageUsageFlags allowed_transient_usage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+
+        const VkImageUsageFlags forbidden_with_transient =
+            VK_IMAGE_USAGE_SAMPLED_BIT |
+            VK_IMAGE_USAGE_STORAGE_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+        const bool can_be_transient = desc.is_transient &&
+                                       (desc.usage & allowed_transient_usage) &&
+                                       !(desc.usage & forbidden_with_transient);
+
+        if (can_be_transient) {
             image_info.usage |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
             alloc_info.preferredFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
         }
