@@ -99,9 +99,11 @@ namespace klingon {
         auto get_projection() const -> const glm::mat4 & { return m_projection; }
         auto get_view() const -> const glm::mat4 & { return m_view; }
         auto get_view_projection() const -> glm::mat4 { return m_projection * m_view; }
+        auto get_inverse_view() const -> const glm::mat4 & { return m_inverse_view; }
 
     private:
         glm::mat4 m_projection{1.f};
         glm::mat4 m_view{1.f};
+        glm::mat4 m_inverse_view{1.f};
     };
 } // namespace klingon

@@ -38,14 +38,15 @@ namespace klingon {
  * Must match std140 layout in shaders
  */
     struct alignas(16) GlobalUbo {
-        glm::mat4 projection{1.f}; // offset 0,   size 64
-        glm::mat4 view{1.f}; // offset 64,  size 64
-        glm::vec4 ambient_light_color{1.f, 1.f, 1.f, 0.02f}; // offset 128, size 16
-        PointLight point_lights[MAX_LIGHTS]; // offset 144, size 320 (10 * 32)
-        int num_lights{0}; // offset 464, size 4
+        glm::mat4 projection{1.f};
+        glm::mat4 view{1.f};
+        glm::mat4 inverseView{1.f};
+        glm::vec4 ambient_light_color{1.f, 1.f, 1.f, 0.02f};
+        PointLight point_lights[MAX_LIGHTS];
+        int num_lights{0};
         // Padding to align struct to 16 bytes (std140 requirement)
-        int _padding[3]{}; // offset 468, size 12
-    }; // Total size: 480 bytes
+        // int _padding[3]{}; // size 12
+    };
 
     /**
  * Frame information passed to render systems

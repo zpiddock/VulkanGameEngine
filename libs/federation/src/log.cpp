@@ -33,7 +33,7 @@ namespace federation {
 #endif
         }
 
-        static bool colors_enabled = enable_windows_ansi_colors();
+        bool colors_enabled = enable_windows_ansi_colors();
     }
 
     auto Logger::set_level(LogLevel level) -> void {

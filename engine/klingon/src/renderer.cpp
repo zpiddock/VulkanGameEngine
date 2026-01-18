@@ -624,11 +624,6 @@ namespace klingon {
         scissor.extent = m_swapchain->get_extent();
         ::vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-        // Do drawing here!
-        // TODO: Loop through gameobjects and ask them to issue draw commands
-
-        // Draw the triangle (3 vertices, 1 instance, first vertex 0, first instance 0)
-        // ::vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
         // Render ImGui if enabled
         if (m_imgui_context) {
@@ -824,6 +819,7 @@ namespace klingon {
         // Update camera matrices
         m_current_ubo.projection = camera.get_projection();
         m_current_ubo.view = camera.get_view();
+        m_current_ubo.inverseView = camera.get_inverse_view();
         m_current_ubo.ambient_light_color = scene->get_ambient_light();
 
         // Update lights via PointLightSystem
