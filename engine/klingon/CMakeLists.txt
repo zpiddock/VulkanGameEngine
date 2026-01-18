@@ -14,6 +14,7 @@ add_library(klingon SHARED
         src/render_systems/point_light_system.cpp
         src/render_graph.cpp
         src/scene.cpp
+        src/model/asset_loader.cpp
 )
 
 target_include_directories(klingon
@@ -34,6 +35,7 @@ target_link_libraries(klingon
         glm
         imgui
         tinyobjloader
+        assimp
 )
 
 # Set output name and versioning
