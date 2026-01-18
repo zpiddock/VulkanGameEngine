@@ -12,6 +12,8 @@
 #include <cstring>
 #include <unordered_map>
 
+#include "klingon/model/asset_loader.hpp"
+
 // Hash function for Vertex
 namespace std {
     template<>
@@ -185,7 +187,8 @@ auto Mesh::create_from_file(batleth::Device& device, const std::string& filepath
     -> std::unique_ptr<Mesh>
 {
     MeshData data{};
-    data.load_from_file(filepath);
+    // data.load_from_file(filepath);
+    data = AssetLoader::load_mesh_from_obj(filepath);
     return std::make_unique<Mesh>(device, data);
 }
 
