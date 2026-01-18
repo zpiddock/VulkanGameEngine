@@ -6,80 +6,83 @@
 #include <optional>
 
 #ifdef _WIN32
-    #ifdef BATLETH_EXPORTS
-        #define BATLETH_API __declspec(dllexport)
-    #else
-        #define BATLETH_API __declspec(dllimport)
-    #endif
+#ifdef BATLETH_EXPORTS
+#define BATLETH_API __declspec(dllexport)
 #else
-    #define BATLETH_API
+#define BATLETH_API __declspec(dllimport)
+#endif
+#else
+#define BATLETH_API
 #endif
 
 namespace batleth {
-
-/**
+    /**
  * RAII wrapper for VkDevice and VkPhysicalDevice.
  * Manages logical and physical device selection and creation.
  */
-class BATLETH_API Device {
-public:
-    struct QueueFamilyIndices {
-        std::optional<std::uint32_t> graphics_family;
-        std::optional<std::uint32_t> present_family;
+    class BATLETH_API Device {
+    public:
+        struct QueueFamilyIndices {
+            std::optional<std::uint32_t> graphics_family;
+            std::optional<std::uint32_t> present_family;
 
-        auto is_complete() const -> bool {
-            return graphics_family.has_value() && present_family.has_value();
-        }
-    };
+            auto is_complete() const -> bool {
+                return graphics_family.has_value() && present_family.has_value();
+            }
+        };
 
-    struct Config {
-        VkInstance instance = VK_NULL_HANDLE;
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
-        std::vector<const char*> device_extensions;
-        VkCommandPool command_pool = VK_NULL_HANDLE;  // Optional: for single-time commands
-    };
+        struct Config {
+            VkInstance instance = VK_NULL_HANDLE;
+            VkSurfaceKHR surface = VK_NULL_HANDLE;
+            std::vector<const char *> device_extensions;
+            VkCommandPool command_pool = VK_NULL_HANDLE; // Optional: for single-time commands
+        };
 
-    explicit Device(const Config& config);
-    ~Device();
+        explicit Device(const Config &config);
 
-    Device(const Device&) = delete;
-    Device& operator=(const Device&) = delete;
-    Device(Device&&) noexcept;
-    Device& operator=(Device&&) noexcept;
+        ~Device();
 
-    auto get_instance() const -> VkInstance { return m_instance; }
-    auto get_physical_device() const -> VkPhysicalDevice { return m_physical_device; }
-    auto get_logical_device() const -> VkDevice { return m_device; }
-    auto get_graphics_queue() const -> VkQueue { return m_graphics_queue; }
-    auto get_graphics_queue_family() const -> std::uint32_t { return m_indices.graphics_family.value(); }
-    auto get_present_queue() const -> VkQueue { return m_present_queue; }
-    auto get_queue_family_indices() const -> const QueueFamilyIndices& { return m_indices; }
-    auto get_surface() const -> VkSurfaceKHR { return m_surface; }
-    auto get_command_pool() const -> VkCommandPool { return m_command_pool; }
-    auto set_command_pool(VkCommandPool pool) -> void { m_command_pool = pool; }
+        Device(const Device &) = delete;
 
-    auto wait_idle() const -> void;
+        Device &operator=(const Device &) = delete;
 
-    /**
+        Device(Device &&) noexcept;
+
+        Device &operator=(Device &&) noexcept;
+
+        auto get_instance() const -> VkInstance { return m_instance; }
+        auto get_physical_device() const -> VkPhysicalDevice { return m_physical_device; }
+        auto get_logical_device() const -> VkDevice { return m_device; }
+        auto get_graphics_queue() const -> VkQueue { return m_graphics_queue; }
+        auto get_graphics_queue_family() const -> std::uint32_t { return m_indices.graphics_family.value(); }
+        auto get_present_queue() const -> VkQueue { return m_present_queue; }
+        auto get_queue_family_indices() const -> const QueueFamilyIndices & { return m_indices; }
+        auto get_surface() const -> VkSurfaceKHR { return m_surface; }
+        auto get_command_pool() const -> VkCommandPool { return m_command_pool; }
+        auto set_command_pool(VkCommandPool pool) -> void { m_command_pool = pool; }
+
+        auto wait_idle() const -> void;
+
+        /**
      * Begin a single-time command buffer for immediate operations (e.g., buffer copies, image uploads).
      * Must call end_single_time_commands() when done.
      */
-    auto begin_single_time_commands() -> VkCommandBuffer;
+        auto begin_single_time_commands() -> VkCommandBuffer;
 
-    /**
+        /**
      * End and submit a single-time command buffer.
      */
-    auto end_single_time_commands(VkCommandBuffer command_buffer) -> void;
+        auto end_single_time_commands(VkCommandBuffer command_buffer) -> void;
 
-    /**
+        /**
      * Find a memory type that has all the required properties
      * @param type_filter Bitmask of suitable memory types
      * @param properties Required memory properties
      * @return Index of suitable memory type
      */
-    auto find_memory_type(std::uint32_t type_filter, VkMemoryPropertyFlags properties) const -> std::uint32_t;
+        auto find_memory_type(std::uint32_t type_filter, VkMemoryPropertyFlags properties) const -> std::uint32_t;
 
-    /**
+        /**
      * Create a Vulkan buffer
      * @param size Size of the buffer in bytes
      * @param usage Buffer usage flags
@@ -87,37 +90,38 @@ public:
      * @param buffer Output buffer handle
      * @param buffer_memory Output device memory handle
      */
-    auto create_buffer(
-        VkDeviceSize size,
-        VkBufferUsageFlags usage,
-        VkMemoryPropertyFlags properties,
-        VkBuffer& buffer,
-        VkDeviceMemory& buffer_memory
-    ) const -> void;
+        auto create_buffer(
+            VkDeviceSize size,
+            VkBufferUsageFlags usage,
+            VkMemoryPropertyFlags properties,
+            VkBuffer &buffer,
+            VkDeviceMemory &buffer_memory
+        ) const -> void;
 
-    /**
+        /**
      * Copy data from one buffer to another
      * @param src_buffer Source buffer
      * @param dst_buffer Destination buffer
      * @param size Size to copy in bytes
      */
-    auto copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) -> void;
+        auto copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) -> void;
 
-private:
-    VkInstance m_instance = VK_NULL_HANDLE;
-    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
-    VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
-    VkDevice m_device = VK_NULL_HANDLE;
-    VkQueue m_graphics_queue = VK_NULL_HANDLE;
-    VkQueue m_present_queue = VK_NULL_HANDLE;
-    VkCommandPool m_command_pool = VK_NULL_HANDLE;
-    QueueFamilyIndices m_indices;
-    bool m_owns_command_pool = false;
+    private:
+        VkInstance m_instance = VK_NULL_HANDLE;
+        VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+        VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+        VkDevice m_device = VK_NULL_HANDLE;
+        VkQueue m_graphics_queue = VK_NULL_HANDLE;
+        VkQueue m_present_queue = VK_NULL_HANDLE;
+        VkCommandPool m_command_pool = VK_NULL_HANDLE;
+        QueueFamilyIndices m_indices;
+        bool m_owns_command_pool = false;
 
-    auto pick_physical_device(VkInstance instance, VkSurfaceKHR surface) -> void;
-    auto find_queue_families(VkPhysicalDevice device, VkSurfaceKHR surface) -> QueueFamilyIndices;
-    auto is_device_suitable(VkPhysicalDevice device, VkSurfaceKHR surface,
-                           const std::vector<const char*>& extensions) -> bool;
-};
+        auto pick_physical_device(VkInstance instance, VkSurfaceKHR surface) -> void;
 
+        auto find_queue_families(VkPhysicalDevice device, VkSurfaceKHR surface) -> QueueFamilyIndices;
+
+        auto is_device_suitable(VkPhysicalDevice device, VkSurfaceKHR surface,
+                                const std::vector<const char *> &extensions) -> bool;
+    };
 } // namespace batleth

@@ -17,7 +17,7 @@
 namespace std {
     template<>
     struct hash<klingon::Vertex> {
-        size_t operator()(const klingon::Vertex& vertex) const {
+        size_t operator()(const klingon::Vertex &vertex) const {
             size_t h1 = hash<glm::vec3>()(vertex.position);
             size_t h2 = hash<glm::vec3>()(vertex.color);
             size_t h3 = hash<glm::vec3>()(vertex.normal);
@@ -35,17 +35,16 @@ namespace std {
 }
 
 namespace klingon {
-
-    auto AssetLoader::load_mesh_from_obj(const std::string& filepath) -> MeshData {
+    auto AssetLoader::load_mesh_from_obj(const std::string &filepath) -> MeshData {
         MeshData data{};
 
         Assimp::Importer importer;
         const auto scene = importer.ReadFile(filepath,
-            ::aiProcess_Triangulate |
-            ::aiProcess_JoinIdenticalVertices |
-            ::aiProcess_FlipUVs |
-            ::aiProcess_GenNormals
-            );
+                                             ::aiProcess_Triangulate |
+                                             ::aiProcess_JoinIdenticalVertices |
+                                             ::aiProcess_FlipUVs |
+                                             ::aiProcess_GenNormals
+        );
 
         if (scene == nullptr) {
             FED_INFO("Failed to import asset {}", filepath);
@@ -67,14 +66,12 @@ namespace klingon {
         std::unordered_map<Vertex, uint32_t> unique_verts{};
 
         for (uint32_t meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
-
             const auto mesh = scene->mMeshes[meshIndex];
 
             for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
                 const auto face = mesh->mFaces[faceIndex];
 
                 for (uint32_t vertIndex = 0; vertIndex < face.mNumIndices; ++vertIndex) {
-
                     uint32_t index = face.mIndices[vertIndex];
                     Vertex vertex{};
 
@@ -108,7 +105,7 @@ namespace klingon {
 
                     if (!unique_verts.contains(vertex)) {
                         unique_verts[vertex] =
-                            static_cast<uint32_t>(data.vertices.size());
+                                static_cast<uint32_t>(data.vertices.size());
                         data.vertices.push_back(vertex);
                     }
                     data.indices.push_back(unique_verts[vertex]);

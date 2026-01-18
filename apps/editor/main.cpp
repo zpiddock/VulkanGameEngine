@@ -20,25 +20,25 @@ auto main() -> int {
         config.window_width = 1920;
         config.window_height = 1080;
         config.enable_validation = true; // Enable validation in editor builds
-        config.enable_imgui = true;      // Enable ImGui for editor UI
+        config.enable_imgui = true; // Enable ImGui for editor UI
 
         klingon::Engine engine{config};
 
         // Create scene (owns camera automatically)
         klingon::Scene scene;
         scene.set_name("Editor Scene");
-        scene.get_camera_transform().translation.z = -5.0f;  // Start camera further back for editor
+        scene.get_camera_transform().translation.z = -5.0f; // Start camera further back for editor
 
         // Create movement controller for scene camera
         klingon::MovementController scene_camera_controller{};
         scene_camera_controller.set_target(&scene.get_camera_transform());
-        scene_camera_controller.set_ui_mode(true);  // Start in UI mode for editor
+        scene_camera_controller.set_ui_mode(true); // Start in UI mode for editor
 
         // Register controller with input system
         engine.get_input().add_subscriber(&scene_camera_controller);
 
         // Enable raw mouse motion if available
-        auto* window = engine.get_window().get_native_handle();
+        auto *window = engine.get_window().get_native_handle();
         if (::glfwRawMouseMotionSupported()) {
             engine.get_window().set_input_mode(GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
@@ -76,7 +76,7 @@ auto main() -> int {
 
             if (::ImGui::TreeNode("Game Objects")) {
                 ::ImGui::Text("Count: %zu", scene.get_game_objects().size());
-                for (const auto& [id, obj] : scene.get_game_objects()) {
+                for (const auto &[id, obj]: scene.get_game_objects()) {
                     ::ImGui::BulletText("Object %u", id);
                 }
                 ::ImGui::TreePop();
@@ -94,15 +94,15 @@ auto main() -> int {
             ::ImGui::Text("Frame Time: %.3f ms", 1000.0f / ::ImGui::GetIO().Framerate);
             ::ImGui::Separator();
 
-            auto& cam_transform = scene.get_camera_transform();
+            auto &cam_transform = scene.get_camera_transform();
             ::ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)",
-                cam_transform.translation.x,
-                cam_transform.translation.y,
-                cam_transform.translation.z);
+                          cam_transform.translation.x,
+                          cam_transform.translation.y,
+                          cam_transform.translation.z);
             ::ImGui::Text("Camera Rotation: (%.2f, %.2f, %.2f)",
-                glm::degrees(cam_transform.rotation.x),
-                glm::degrees(cam_transform.rotation.y),
-                glm::degrees(cam_transform.rotation.z));
+                          glm::degrees(cam_transform.rotation.x),
+                          glm::degrees(cam_transform.rotation.y),
+                          glm::degrees(cam_transform.rotation.z));
 
             ::ImGui::Separator();
             ::ImGui::Text("Controls:");
@@ -131,8 +131,7 @@ auto main() -> int {
         engine.run();
 
         return EXIT_SUCCESS;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }

@@ -18,6 +18,7 @@
 
 auto main() -> int {
     try {
+        federation::Logger::set_level(federation::LogLevel::Trace);
         // Create engine
         klingon::Engine::Config config{};
         config.application_name = "Klingon Game";
@@ -38,7 +39,7 @@ auto main() -> int {
         engine.get_input().add_subscriber(&controller);
 
         // Set cursor mode to disabled (FPS-style)
-        auto* window = engine.get_window().get_native_handle();
+        auto *window = engine.get_window().get_native_handle();
         ::glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         // Enable raw mouse motion if available
@@ -46,7 +47,7 @@ auto main() -> int {
             ::glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
 
-        auto& device = engine.get_renderer().get_device_ref();
+        auto &device = engine.get_renderer().get_device_ref();
 
         // Load smooth vase
         auto smooth_vase = klingon::GameObject::create_game_object();
@@ -107,13 +108,13 @@ auto main() -> int {
                 ::ImGui::Text("Frame time: %.3f ms", 1000.0f / ::ImGui::GetIO().Framerate);
                 ::ImGui::Separator();
                 ::ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)",
-                    scene.get_camera_transform().translation.x,
-                    scene.get_camera_transform().translation.y,
-                    scene.get_camera_transform().translation.z);
+                              scene.get_camera_transform().translation.x,
+                              scene.get_camera_transform().translation.y,
+                              scene.get_camera_transform().translation.z);
                 ::ImGui::Text("Camera Rotation: (%.2f, %.2f, %.2f)",
-                    glm::degrees(scene.get_camera_transform().rotation.x),
-                    glm::degrees(scene.get_camera_transform().rotation.y),
-                    glm::degrees(scene.get_camera_transform().rotation.z));
+                              glm::degrees(scene.get_camera_transform().rotation.x),
+                              glm::degrees(scene.get_camera_transform().rotation.y),
+                              glm::degrees(scene.get_camera_transform().rotation.z));
                 ::ImGui::Separator();
                 ::ImGui::Text("Scene: %s", scene.get_name().c_str());
                 ::ImGui::BulletText("Game Objects: %zu", scene.get_game_objects().size());
@@ -140,8 +141,7 @@ auto main() -> int {
         engine.run();
 
         return EXIT_SUCCESS;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }
