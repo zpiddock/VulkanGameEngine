@@ -39,5 +39,6 @@ void main() {
 
     float cosDis = 0.5 * (cos(distanceFromOffset * M_PI) + 1.0);
 
-    outColour = vec4(push.colour.xyz + 0.5 * cosDis, cosDis);
+    // Multiply color by alpha for proper fade-out at edges
+    outColour = vec4(push.colour.xyz * cosDis, cosDis);
 }

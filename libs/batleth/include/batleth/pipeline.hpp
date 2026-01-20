@@ -58,6 +58,15 @@ namespace batleth {
             bool enable_depth_test = false;
             bool enable_depth_write = false;
             VkCompareOp depth_compare_op = VK_COMPARE_OP_LESS;
+
+            // Alpha blending
+            bool enable_blending = true;
+            VkBlendFactor src_color_blend_factor = VK_BLEND_FACTOR_SRC_ALPHA;
+            VkBlendFactor dst_color_blend_factor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            VkBlendOp color_blend_op = VK_BLEND_OP_ADD;
+            VkBlendFactor src_alpha_blend_factor = VK_BLEND_FACTOR_ONE;
+            VkBlendFactor dst_alpha_blend_factor = VK_BLEND_FACTOR_ZERO;
+            VkBlendOp alpha_blend_op = VK_BLEND_OP_ADD;
         };
 
         explicit Pipeline(const Config &config);

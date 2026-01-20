@@ -62,8 +62,17 @@ namespace klingon {
         pipeline_config.cull_mode = VK_CULL_MODE_NONE;
         pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_config.enable_depth_test = true;
-        pipeline_config.enable_depth_write = true; // Don't write to depth buffer for lights
+        pipeline_config.enable_depth_write = false; // Don't write to depth buffer for lights
         pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;  // Changed for depth pre-pass compatibility
+
+        // Additive blending for lights (accumulate light contributions)
+        pipeline_config.enable_blending = true;
+        pipeline_config.src_color_blend_factor = VK_BLEND_FACTOR_SRC_ALPHA;
+        pipeline_config.dst_color_blend_factor = VK_BLEND_FACTOR_ONE;  // Additive blending
+        pipeline_config.color_blend_op = VK_BLEND_OP_ADD;
+        pipeline_config.src_alpha_blend_factor = VK_BLEND_FACTOR_ONE;
+        pipeline_config.dst_alpha_blend_factor = VK_BLEND_FACTOR_ZERO;
+        pipeline_config.alpha_blend_op = VK_BLEND_OP_ADD;
 
         m_pipeline = std::make_unique<batleth::Pipeline>(pipeline_config);
         FED_INFO("PointLightSystem created successfully");

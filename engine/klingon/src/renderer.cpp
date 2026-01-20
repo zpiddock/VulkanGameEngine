@@ -726,13 +726,15 @@ namespace klingon {
         }
 
         // Create descriptor set layout for Set 1 (Forward+ resources)
-        // Binding 0: Depth texture (sampler2D)
-        // Binding 1: Light grid (storage buffer)
-        // Binding 2: Light count (storage buffer)
+        // Binding 0: Depth texture (sampler2D) - compute only
+        // Binding 1: Light grid (storage buffer) - compute writes, fragment reads
+        // Binding 2: Light count (storage buffer) - compute writes, fragment reads
         m_forward_plus_set_layout = batleth::DescriptorSetLayout::Builder(m_device->get_logical_device())
                 .add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                .add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                .add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                             VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+                .add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                             VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
                 .build();
 
         // Create descriptor pool for Forward+ descriptors
@@ -915,7 +917,9 @@ namespace klingon {
             m_simple_render_system = std::make_unique<SimpleRenderSystem>(
                 *m_device,
                 render_target_format,
-                m_global_set_layout->get_layout()
+                m_global_set_layout->get_layout(),
+                m_forward_plus_set_layout ? m_forward_plus_set_layout->get_layout() : VK_NULL_HANDLE,
+                m_config.renderer.forward_plus.enabled
             );
         }
 
@@ -1064,14 +1068,102 @@ namespace klingon {
         if (m_config.renderer.forward_plus.enabled && m_config.renderer.forward_plus.enable_depth_prepass) {
             builder.add_compute_pass(
                         "light_culling",
-                        [this, depth_buffer, light_grid, light_count, tile_count_x, tile_count_y, tile_size](
+                        [this, depth_buffer, light_grid, light_count, tile_count_x, tile_count_y, tile_size, max_lights_per_tile, extent](
                             const batleth::PassExecutionContext &ctx
                         ) {
                             if (!m_active_scene) return;
+                            if (m_light_culling_pipeline == VK_NULL_HANDLE) return;
 
-                            // TODO: Dispatch light culling compute shader
-                            // This will be implemented once we have the compute pipeline set up
-                            // FED_TRACE("Light culling compute pass executed (placeholder)");
+                            // Get render graph resources
+                            VkImageView depth_view = ctx.get_image_view(depth_buffer);
+                            VkBuffer light_grid_buffer = ctx.get_buffer(light_grid);
+                            VkBuffer light_count_buffer = ctx.get_buffer(light_count);
+
+                            // Allocate/update descriptor set for this frame if needed
+                            // For now, we'll allocate descriptor sets lazily
+                            if (m_forward_plus_descriptor_sets.size() < MAX_FRAMES_IN_FLIGHT) {
+                                m_forward_plus_descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+
+                                for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+                                    if (!batleth::DescriptorWriter(*m_forward_plus_set_layout, *m_forward_plus_descriptor_pool)
+                                            .build(m_forward_plus_descriptor_sets[i])) {
+                                        FED_ERROR("Failed to allocate Forward+ descriptor set for frame {}", i);
+                                        return;
+                                    }
+                                }
+                            }
+
+                            // Write descriptor set with current resources
+                            VkDescriptorImageInfo depth_image_info{};
+                            depth_image_info.sampler = m_depth_sampler;
+                            depth_image_info.imageView = depth_view;
+                            depth_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+                            VkDescriptorBufferInfo light_grid_info{};
+                            light_grid_info.buffer = light_grid_buffer;
+                            light_grid_info.offset = 0;
+                            light_grid_info.range = VK_WHOLE_SIZE;
+
+                            VkDescriptorBufferInfo light_count_info{};
+                            light_count_info.buffer = light_count_buffer;
+                            light_count_info.offset = 0;
+                            light_count_info.range = VK_WHOLE_SIZE;
+
+                            batleth::DescriptorWriter(*m_forward_plus_set_layout, *m_forward_plus_descriptor_pool)
+                                    .write_image(0, &depth_image_info)
+                                    .write_buffer(1, &light_grid_info)
+                                    .write_buffer(2, &light_count_info)
+                                    .overwrite(m_forward_plus_descriptor_sets[ctx.frame_index]);
+
+                            // Bind compute pipeline
+                            ::vkCmdBindPipeline(ctx.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_light_culling_pipeline);
+
+                            // Bind descriptor sets
+                            VkDescriptorSet descriptor_sets[] = {
+                                m_global_descriptor_sets[ctx.frame_index],       // Set 0: Global UBO
+                                m_forward_plus_descriptor_sets[ctx.frame_index]  // Set 1: Forward+ resources
+                            };
+
+                            ::vkCmdBindDescriptorSets(
+                                ctx.command_buffer,
+                                VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_light_culling_pipeline_layout,
+                                0,
+                                2,
+                                descriptor_sets,
+                                0,
+                                nullptr
+                            );
+
+                            // Calculate push constants
+                            auto &camera = m_active_scene->get_camera();
+                            auto view_projection = camera.get_projection() * camera.get_view();
+                            auto view_projection_inverse = glm::inverse(view_projection);
+
+                            LightCullingPushConstants push_constants{};
+                            push_constants.view_projection_inverse = view_projection_inverse;
+                            push_constants.screen_size = glm::uvec2(extent.width, extent.height);
+                            push_constants.tile_count = glm::uvec2(tile_count_x, tile_count_y);
+                            push_constants.num_lights = static_cast<uint32_t>(m_current_ubo.num_lights);
+                            push_constants.tile_size = tile_size;
+                            push_constants.z_near = 0.1f;  // TODO: Get from camera
+                            push_constants.z_far = 100.0f; // TODO: Get from camera
+
+                            ::vkCmdPushConstants(
+                                ctx.command_buffer,
+                                m_light_culling_pipeline_layout,
+                                VK_SHADER_STAGE_COMPUTE_BIT,
+                                0,
+                                sizeof(LightCullingPushConstants),
+                                &push_constants
+                            );
+
+                            // Dispatch compute shader
+                            // Workgroup size is 16x16, so we need (tile_count_x, tile_count_y, 1) workgroups
+                            ::vkCmdDispatch(ctx.command_buffer, tile_count_x, tile_count_y, 1);
+
+                            // FED_TRACE("Light culling compute dispatched: {}x{} tiles, {} lights",
+                            //           tile_count_x, tile_count_y, push_constants.num_lights);
                         }
                     )
                     .read(depth_buffer, batleth::ResourceUsage::SampledImage)
@@ -1082,8 +1174,22 @@ namespace klingon {
         // Main geometry/shading pass
         builder.add_graphics_pass(
                     "forward_shading",
-                    [this](const batleth::PassExecutionContext &ctx) {
+                    [this, tile_count_x, tile_count_y, tile_size, max_lights_per_tile](
+                        const batleth::PassExecutionContext &ctx
+                    ) {
                         if (!m_active_scene) return;
+
+                        // Set Forward+ resources if enabled
+                        if (m_config.renderer.forward_plus.enabled &&
+                            !m_forward_plus_descriptor_sets.empty()) {
+                            m_simple_render_system->set_forward_plus_resources(
+                                m_forward_plus_descriptor_sets[ctx.frame_index],
+                                tile_count_x,
+                                tile_count_y,
+                                tile_size,
+                                max_lights_per_tile
+                            );
+                        }
 
                         // Create frame info
                         FrameInfo frame_info{
@@ -1122,6 +1228,12 @@ namespace klingon {
         // Depth buffer is always written as an attachment (even if pipeline disables writes)
         // The render graph needs to know about the depth attachment
         builder.write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+
+        // Forward+ resources (read light grid and count)
+        if (m_config.renderer.forward_plus.enabled) {
+            builder.read(light_grid, batleth::ResourceUsage::StorageBufferRead)
+                   .read(light_count, batleth::ResourceUsage::StorageBufferRead);
+        }
 
         // Blit offscreen to backbuffer (if offscreen rendering is enabled)
         if (m_config.renderer.offscreen.enabled) {

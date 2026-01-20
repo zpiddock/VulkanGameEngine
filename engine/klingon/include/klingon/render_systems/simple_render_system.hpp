@@ -25,7 +25,13 @@ namespace klingon {
      */
     class KLINGON_API SimpleRenderSystem : public IRenderSystem {
     public:
-        SimpleRenderSystem(batleth::Device &device, VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout);
+        SimpleRenderSystem(
+            batleth::Device &device,
+            VkFormat swapchain_format,
+            VkDescriptorSetLayout global_set_layout,
+            VkDescriptorSetLayout forward_plus_set_layout = VK_NULL_HANDLE,  // Optional Forward+ layout
+            bool use_forward_plus = false
+        );
 
         ~SimpleRenderSystem() override;
 
@@ -38,18 +44,36 @@ namespace klingon {
 
         auto on_swapchain_recreate(VkFormat format) -> void override;
 
+        // Forward+ specific
+        auto set_forward_plus_resources(VkDescriptorSet forward_plus_descriptor_set,
+                                        uint32_t tile_count_x, uint32_t tile_count_y,
+                                        uint32_t tile_size, uint32_t max_lights_per_tile) -> void;
+
     private:
         struct PushConstantData {
             glm::mat4 model_matrix{1.f};
             glm::mat4 normal_matrix{1.f};
+            // Forward+ tile information (only used if Forward+ enabled)
+            glm::uvec2 tile_count{0, 0};
+            uint32_t tile_size{0};
+            uint32_t max_lights_per_tile{0};
         };
 
         auto create_pipeline(VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout) -> void;
 
         batleth::Device &m_device;
         VkDescriptorSetLayout m_global_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_forward_plus_set_layout = VK_NULL_HANDLE;
         VkFormat m_swapchain_format = VK_FORMAT_UNDEFINED;
+        bool m_use_forward_plus = true;
         std::vector<std::unique_ptr<batleth::Shader> > m_shaders;
         std::unique_ptr<batleth::Pipeline> m_pipeline;
+
+        // Forward+ state (set per-frame)
+        VkDescriptorSet m_forward_plus_descriptor_set = VK_NULL_HANDLE;
+        uint32_t m_tile_count_x = 0;
+        uint32_t m_tile_count_y = 0;
+        uint32_t m_tile_size = 0;
+        uint32_t m_max_lights_per_tile = 0;
     };
 } // namespace klingon
