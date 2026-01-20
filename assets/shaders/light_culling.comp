@@ -1,0 +1,193 @@
+#version 450
+
+// Workgroup size: 16x16 threads per tile
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// Point light structure (must match GlobalUbo in frame_info.hpp)
+struct PointLight {
+    vec4 position;  // w = radius (unused in current implementation)
+    vec4 color;     // w = intensity
+};
+
+// UBO with light data (set 0, binding 0)
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    mat4 projection;
+    mat4 view;
+    mat4 inverseView;
+    vec4 ambientLightColor;
+    PointLight pointLights[1000];  // TODO: Increase to 1000+ when we move lights to SSBO
+    int numLights;
+} ubo;
+
+// Depth buffer (read-only) - set 1, binding 0
+layout(set = 1, binding = 0) uniform sampler2D depthTexture;
+
+// Light grid output (storage buffer) - set 1, binding 1
+// Layout: [tile_y * grid_width + tile_x][light_index] = global_light_index
+layout(set = 1, binding = 1, std430) buffer LightGrid {
+    uint data[];  // Flat array: [tile_count_x * tile_count_y * max_lights_per_tile]
+} lightGrid;
+
+// Light count per tile (for bounds checking) - set 1, binding 2
+layout(set = 1, binding = 2, std430) buffer LightCount {
+    uint data[];  // [tile_count_x * tile_count_y]
+} lightCount;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    mat4 viewProjectionInverse;
+    uvec2 screenSize;
+    uvec2 tileCount;
+    uint numLights;
+    uint tileSize;
+    float zNear;
+    float zFar;
+} pc;
+
+// Shared memory for per-tile light culling
+// Each thread in the workgroup contributes to this list
+shared uint sharedLightIndices[256];  // max_lights_per_tile
+shared uint sharedLightCount;
+
+// Tile frustum represented as AABB (Axis-Aligned Bounding Box)
+struct Frustum {
+    vec3 minBounds;
+    vec3 maxBounds;
+};
+
+// Reconstruct world position from depth buffer value
+vec3 worldPosFromDepth(vec2 uv, float depth) {
+    // Convert UV [0,1] and depth [0,1] to NDC [-1,1]
+    vec4 clipSpace = vec4(uv * 2.0 - 1.0, depth, 1.0);
+
+    // Transform to world space
+    vec4 worldSpace = pc.viewProjectionInverse * clipSpace;
+
+    // Perspective divide
+    return worldSpace.xyz / worldSpace.w;
+}
+
+// Compute tile frustum as AABB by sampling depth at tile corners
+Frustum computeTileFrustum(uvec2 tileID) {
+    // Compute tile pixel bounds
+    vec2 tileMin = vec2(tileID) * float(pc.tileSize);
+    vec2 tileMax = tileMin + vec2(pc.tileSize);
+
+    // Clamp to screen bounds (handles edge tiles)
+    tileMax = min(tileMax, vec2(pc.screenSize));
+
+    // Convert to UV space [0,1]
+    vec2 uvMin = tileMin / vec2(pc.screenSize);
+    vec2 uvMax = tileMax / vec2(pc.screenSize);
+
+    // Sample depth at tile corners to find depth range
+    float depth00 = texture(depthTexture, uvMin).r;
+    float depth10 = texture(depthTexture, vec2(uvMax.x, uvMin.y)).r;
+    float depth01 = texture(depthTexture, vec2(uvMin.x, uvMax.y)).r;
+    float depth11 = texture(depthTexture, uvMax).r;
+
+    // Find min/max depth in tile
+    float minDepth = min(min(depth00, depth10), min(depth01, depth11));
+    float maxDepth = max(max(depth00, depth10), max(depth01, depth11));
+
+    // Handle empty tiles (no geometry rendered)
+    if (maxDepth == 0.0) {
+        maxDepth = 1.0;  // Push far plane to infinity
+    }
+
+    // Reconstruct 8 frustum corners in world space
+    // 4 corners at near depth, 4 at far depth
+    vec3 corners[8];
+    corners[0] = worldPosFromDepth(uvMin, minDepth);
+    corners[1] = worldPosFromDepth(vec2(uvMax.x, uvMin.y), minDepth);
+    corners[2] = worldPosFromDepth(vec2(uvMin.x, uvMax.y), minDepth);
+    corners[3] = worldPosFromDepth(uvMax, minDepth);
+    corners[4] = worldPosFromDepth(uvMin, maxDepth);
+    corners[5] = worldPosFromDepth(vec2(uvMax.x, uvMin.y), maxDepth);
+    corners[6] = worldPosFromDepth(vec2(uvMin.x, uvMax.y), maxDepth);
+    corners[7] = worldPosFromDepth(uvMax, maxDepth);
+
+    // Compute AABB enclosing all corners
+    Frustum frustum;
+    frustum.minBounds = corners[0];
+    frustum.maxBounds = corners[0];
+
+    for (int i = 1; i < 8; ++i) {
+        frustum.minBounds = min(frustum.minBounds, corners[i]);
+        frustum.maxBounds = max(frustum.maxBounds, corners[i]);
+    }
+
+    return frustum;
+}
+
+// Test if sphere intersects AABB (conservative test)
+bool sphereIntersectsAABB(vec3 sphereCenter, float sphereRadius, Frustum aabb) {
+    // Find closest point on AABB to sphere center
+    vec3 closestPoint = clamp(sphereCenter, aabb.minBounds, aabb.maxBounds);
+
+    // Check if distance from sphere center to closest point is less than radius
+    float distSq = dot(sphereCenter - closestPoint, sphereCenter - closestPoint);
+    return distSq <= (sphereRadius * sphereRadius);
+}
+
+void main() {
+    // Get tile ID from workgroup
+    uvec2 tileID = gl_WorkGroupID.xy;
+
+    // Get local thread index within workgroup
+    uint localThreadIndex = gl_LocalInvocationIndex;
+
+    // Initialize shared memory (only first thread)
+    if (localThreadIndex == 0) {
+        sharedLightCount = 0;
+    }
+    barrier();
+
+    // Compute tile frustum (all threads collaborate by computing same frustum)
+    Frustum tileFrustum = computeTileFrustum(tileID);
+
+    // Each thread tests a subset of lights
+    // Thread 0 tests lights [0, 256, 512, ...]
+    // Thread 1 tests lights [1, 257, 513, ...]
+    // etc.
+    uint threadsPerWorkgroup = 16 * 16;  // 256 threads
+
+    for (uint lightIndex = localThreadIndex; lightIndex < pc.numLights; lightIndex += threadsPerWorkgroup) {
+        PointLight light = ubo.pointLights[lightIndex];
+        vec3 lightPos = light.position.xyz;
+
+        // Compute light radius from intensity (simple heuristic)
+        // In a real engine, this would be precomputed or stored in light.position.w
+        float lightIntensity = light.color.w;
+        float lightRadius = sqrt(lightIntensity) * 10.0;  // Adjust multiplier as needed
+
+        // Test if light intersects tile frustum
+        if (sphereIntersectsAABB(lightPos, lightRadius, tileFrustum)) {
+            // Atomically add light to shared list
+            uint index = atomicAdd(sharedLightCount, 1);
+
+            // Bounds check (don't overflow shared memory)
+            if (index < 256) {  // max_lights_per_tile
+                sharedLightIndices[index] = lightIndex;
+            }
+        }
+    }
+
+    // Wait for all threads to finish culling
+    barrier();
+
+    // Write results to global memory
+    uint tileIndex = tileID.y * pc.tileCount.x + tileID.x;
+    uint lightCountInTile = min(sharedLightCount, 256u);  // Clamp to max
+
+    // First thread writes light count
+    if (localThreadIndex == 0) {
+        lightCount.data[tileIndex] = lightCountInTile;
+    }
+
+    // Write light indices (multiple threads collaborate)
+    uint baseOffset = tileIndex * 256;  // max_lights_per_tile
+    for (uint i = localThreadIndex; i < lightCountInTile; i += threadsPerWorkgroup) {
+        lightGrid.data[baseOffset + i] = sharedLightIndices[i];
+    }
+}

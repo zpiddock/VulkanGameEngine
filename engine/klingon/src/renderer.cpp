@@ -3,6 +3,7 @@
 #include "klingon/scene.hpp"
 #include "klingon/render_graph.hpp"
 #include "klingon/frame_info.hpp"
+#include "klingon/forward_plus.hpp"
 #include "klingon/render_systems/simple_render_system.hpp"
 #include "klingon/render_systems/point_light_system.hpp"
 #include "borg/window.hpp"
@@ -68,6 +69,9 @@ namespace klingon {
             );
         }
 
+        // Note: Forward+ compute pipeline is created lazily when render graph is built
+        // (after global descriptors are set up)
+
         FED_INFO("Renderer initialized successfully");
     }
 
@@ -99,6 +103,9 @@ namespace klingon {
         if (m_offscreen_sampler != VK_NULL_HANDLE) {
             ::vkDestroySampler(m_device->get_logical_device(), m_offscreen_sampler, nullptr);
         }
+
+        // Cleanup Forward+ resources
+        cleanup_forward_plus_resources();
 
         // Cleanup depth resources
         cleanup_depth_resources();
@@ -649,8 +656,10 @@ namespace klingon {
         FED_INFO("Creating global descriptors for scene rendering");
 
         // Create descriptor set layout
+        // NOTE: Includes compute shader stage for Forward+ light culling
         m_global_set_layout = batleth::DescriptorSetLayout::Builder(m_device->get_logical_device())
-                .add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS)
+                .add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                             VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT)
                 .build();
 
         // Create UBO buffers (one per frame in flight)
@@ -683,6 +692,145 @@ namespace klingon {
         }
 
         FED_INFO("Created {} global descriptor sets", m_global_descriptor_sets.size());
+    }
+
+    auto Renderer::create_forward_plus_compute_pipeline() -> void {
+        if (!m_config.renderer.forward_plus.enabled) {
+            return;
+        }
+
+        FED_INFO("Creating Forward+ compute pipeline for light culling");
+
+        // Create depth sampler for sampling depth texture in compute shader
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_NEAREST;
+        sampler_info.minFilter = VK_FILTER_NEAREST;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.anisotropyEnable = VK_FALSE;
+        sampler_info.maxAnisotropy = 1.0f;
+        sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        sampler_info.unnormalizedCoordinates = VK_FALSE;
+        sampler_info.compareEnable = VK_FALSE;
+        sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler_info.mipLodBias = 0.0f;
+        sampler_info.minLod = 0.0f;
+        sampler_info.maxLod = 0.0f;
+
+        if (::vkCreateSampler(m_device->get_logical_device(), &sampler_info, nullptr, &m_depth_sampler) != VK_SUCCESS) {
+            FED_ERROR("Failed to create depth sampler for Forward+ compute");
+            return;
+        }
+
+        // Create descriptor set layout for Set 1 (Forward+ resources)
+        // Binding 0: Depth texture (sampler2D)
+        // Binding 1: Light grid (storage buffer)
+        // Binding 2: Light count (storage buffer)
+        m_forward_plus_set_layout = batleth::DescriptorSetLayout::Builder(m_device->get_logical_device())
+                .add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .build();
+
+        // Create descriptor pool for Forward+ descriptors
+        m_forward_plus_descriptor_pool = batleth::DescriptorPool::Builder(m_device->get_logical_device())
+                .set_max_sets(MAX_FRAMES_IN_FLIGHT)
+                .add_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_FRAMES_IN_FLIGHT)
+                .add_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_FRAMES_IN_FLIGHT * 2) // 2 buffers per frame
+                .build();
+
+        FED_INFO("Created Forward+ descriptor set layout and pool");
+
+        // Note: Descriptor sets will be allocated and written during render graph execution
+        // because they need to reference the actual depth texture and storage buffers
+        // which are created by the render graph
+
+        FED_DEBUG("Creating pipeline layout...");
+
+        // Create pipeline layout with push constants
+        VkPushConstantRange push_constant_range{};
+        push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        push_constant_range.offset = 0;
+        push_constant_range.size = sizeof(LightCullingPushConstants);
+
+        std::vector<VkDescriptorSetLayout> descriptor_set_layouts = {
+            m_global_set_layout->get_layout(),       // Set 0: Global UBO
+            m_forward_plus_set_layout->get_layout()  // Set 1: Forward+ resources
+        };
+
+        VkPipelineLayoutCreateInfo pipeline_layout_info{};
+        pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size());
+        pipeline_layout_info.pSetLayouts = descriptor_set_layouts.data();
+        pipeline_layout_info.pushConstantRangeCount = 1;
+        pipeline_layout_info.pPushConstantRanges = &push_constant_range;
+
+        FED_DEBUG("Calling vkCreatePipelineLayout...");
+        if (::vkCreatePipelineLayout(m_device->get_logical_device(), &pipeline_layout_info, nullptr,
+                                     &m_light_culling_pipeline_layout) != VK_SUCCESS) {
+            FED_ERROR("Failed to create light culling pipeline layout");
+            return;
+        }
+        FED_DEBUG("Pipeline layout created successfully");
+
+        // Load and compile compute shader
+        try {
+            FED_DEBUG("Configuring compute shader...");
+            auto compute_shader_config = batleth::Shader::Config{};
+            compute_shader_config.device = m_device->get_logical_device();
+            compute_shader_config.filepath = "assets/shaders/light_culling.comp";
+            compute_shader_config.stage = batleth::Shader::Stage::Compute;
+            compute_shader_config.enable_hot_reload = false;  // Disable hot-reload for now
+            compute_shader_config.optimize = true;
+
+            FED_DEBUG("Compiling compute shader...");
+            auto compute_shader = batleth::Shader{compute_shader_config};
+            FED_DEBUG("Compute shader compiled successfully");
+
+            // Create compute pipeline
+            VkComputePipelineCreateInfo pipeline_info{};
+            pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+            pipeline_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            pipeline_info.stage.stage = compute_shader.get_stage();
+            pipeline_info.stage.module = compute_shader.get_module();
+            pipeline_info.stage.pName = "main";
+            pipeline_info.layout = m_light_culling_pipeline_layout;
+
+            if (::vkCreateComputePipelines(m_device->get_logical_device(), VK_NULL_HANDLE, 1, &pipeline_info, nullptr,
+                                           &m_light_culling_pipeline) != VK_SUCCESS) {
+                FED_ERROR("Failed to create light culling compute pipeline");
+                return;
+            }
+
+            FED_INFO("Forward+ light culling compute pipeline created successfully");
+        } catch (const std::exception &e) {
+            FED_ERROR("Exception while creating Forward+ compute pipeline: {}", e.what());
+            return;
+        }
+    }
+
+    auto Renderer::cleanup_forward_plus_resources() -> void {
+        if (m_light_culling_pipeline != VK_NULL_HANDLE) {
+            ::vkDestroyPipeline(m_device->get_logical_device(), m_light_culling_pipeline, nullptr);
+            m_light_culling_pipeline = VK_NULL_HANDLE;
+        }
+
+        if (m_light_culling_pipeline_layout != VK_NULL_HANDLE) {
+            ::vkDestroyPipelineLayout(m_device->get_logical_device(), m_light_culling_pipeline_layout, nullptr);
+            m_light_culling_pipeline_layout = VK_NULL_HANDLE;
+        }
+
+        if (m_depth_sampler != VK_NULL_HANDLE) {
+            ::vkDestroySampler(m_device->get_logical_device(), m_depth_sampler, nullptr);
+            m_depth_sampler = VK_NULL_HANDLE;
+        }
+
+        m_forward_plus_set_layout.reset();
+        m_forward_plus_descriptor_pool.reset();
+        m_forward_plus_descriptor_sets.clear();
     }
 
     auto Renderer::update_camera_from_scene(Scene *scene, float delta_time) -> void {
@@ -742,6 +890,11 @@ namespace klingon {
         // Create descriptors if not already created
         if (!m_global_set_layout) {
             create_global_descriptors();
+        }
+
+        // Create Forward+ compute pipeline if enabled and not already created
+        if (m_config.renderer.forward_plus.enabled && m_light_culling_pipeline == VK_NULL_HANDLE) {
+            create_forward_plus_compute_pipeline();
         }
 
         // Determine render target format (offscreen HDR or swapchain)
@@ -817,6 +970,39 @@ namespace klingon {
         depth_desc.is_transient = false;  // Cannot be transient with SAMPLED_BIT
         auto depth_buffer = builder.create_image("depth", depth_desc);
 
+        // Light grid storage buffers (for Forward+ light culling)
+        batleth::ResourceHandle light_grid;
+        batleth::ResourceHandle light_count;
+
+        if (m_config.renderer.forward_plus.enabled) {
+            // Light grid: stores light indices for each tile
+            // Size: tile_count_x * tile_count_y * max_lights_per_tile * sizeof(uint32_t)
+            uint32_t light_grid_size = tile_count_x * tile_count_y * max_lights_per_tile * sizeof(uint32_t);
+            light_grid = builder.create_buffer(
+                "light_grid",
+                batleth::BufferResourceDesc{
+                    .size = light_grid_size,
+                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    .is_transient = true  // Only needed during this frame
+                }
+            );
+
+            // Light count: stores number of lights per tile
+            // Size: tile_count_x * tile_count_y * sizeof(uint32_t)
+            uint32_t light_count_size = tile_count_x * tile_count_y * sizeof(uint32_t);
+            light_count = builder.create_buffer(
+                "light_count",
+                batleth::BufferResourceDesc{
+                    .size = light_count_size,
+                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    .is_transient = true
+                }
+            );
+
+            FED_DEBUG("Created Forward+ light buffers: grid={} bytes, count={} bytes",
+                      light_grid_size, light_count_size);
+        }
+
         // Offscreen color buffer (if enabled)
         batleth::ResourceHandle color_target;
         if (m_config.renderer.offscreen.enabled) {
@@ -872,6 +1058,25 @@ namespace klingon {
                     )
                     .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
                     .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+        }
+
+        // Light culling compute pass (Forward+ core)
+        if (m_config.renderer.forward_plus.enabled && m_config.renderer.forward_plus.enable_depth_prepass) {
+            builder.add_compute_pass(
+                        "light_culling",
+                        [this, depth_buffer, light_grid, light_count, tile_count_x, tile_count_y, tile_size](
+                            const batleth::PassExecutionContext &ctx
+                        ) {
+                            if (!m_active_scene) return;
+
+                            // TODO: Dispatch light culling compute shader
+                            // This will be implemented once we have the compute pipeline set up
+                            // FED_TRACE("Light culling compute pass executed (placeholder)");
+                        }
+                    )
+                    .read(depth_buffer, batleth::ResourceUsage::SampledImage)
+                    .write(light_grid, batleth::ResourceUsage::StorageBufferWrite)
+                    .write(light_count, batleth::ResourceUsage::StorageBufferWrite);
         }
 
         // Main geometry/shading pass

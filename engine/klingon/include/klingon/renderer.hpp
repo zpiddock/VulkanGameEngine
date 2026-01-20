@@ -160,6 +160,10 @@ namespace klingon {
 
         auto create_global_descriptors() -> void;
 
+        auto create_forward_plus_compute_pipeline() -> void;
+
+        auto cleanup_forward_plus_resources() -> void;
+
 
         borg::Window &m_window;
         KlingonConfig m_config;
@@ -209,6 +213,14 @@ namespace klingon {
         std::vector<VkDescriptorSet> m_global_descriptor_sets;
         std::vector<std::unique_ptr<batleth::Buffer> > m_ubo_buffers;
         GlobalUbo m_current_ubo;
+
+        // Forward+ compute resources
+        std::unique_ptr<batleth::DescriptorSetLayout> m_forward_plus_set_layout;
+        std::unique_ptr<batleth::DescriptorPool> m_forward_plus_descriptor_pool;
+        std::vector<VkDescriptorSet> m_forward_plus_descriptor_sets;
+        VkPipelineLayout m_light_culling_pipeline_layout = VK_NULL_HANDLE;
+        VkPipeline m_light_culling_pipeline = VK_NULL_HANDLE;
+        VkSampler m_depth_sampler = VK_NULL_HANDLE;
 
         // Render systems
         std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
