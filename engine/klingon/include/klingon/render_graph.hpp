@@ -365,3 +365,7 @@ namespace klingon {
         std::unordered_map<batleth::ResourceHandle, batleth::ResourceState> m_resource_states;
     };
 } // namespace klingon
+
+// Include inline implementations for PassExecutionContext methods
+// This must be at the end after CompiledRenderGraph is fully defined
+#include "batleth/render_graph_pass_impl.hpp"

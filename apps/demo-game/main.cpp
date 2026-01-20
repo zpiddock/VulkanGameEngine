@@ -26,7 +26,7 @@ auto main() -> int {
         auto game_config = federation::ConfigManager::load<GameConfig>("game.json");
 
         // Override engine config with game-specific values
-        game_config.engine.application.name = "Klingon Game";
+        game_config.engine.application.name = "Demo Klingon Game";
         game_config.engine.window.width = 1920;
         game_config.engine.window.height = 1080;
         game_config.engine.vulkan.instance.enable_validation = true;

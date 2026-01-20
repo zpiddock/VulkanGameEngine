@@ -14,7 +14,7 @@ struct EditorConfig {
     // Editor UI settings
     struct UI {
         bool enable_docking = true;
-        bool enable_viewports = false;
+        bool enable_viewports = true;
         float font_size = 16.0f;
         std::string theme = "dark";
 

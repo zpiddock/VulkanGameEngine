@@ -22,7 +22,7 @@ namespace klingon {
 
         // Create window from config
         borg::Window::Config window_config{};
-        window_config.title = config.window.title;
+        window_config.title = config.application.name;
         window_config.width = config.window.width;
         window_config.height = config.window.height;
         window_config.resizable = config.window.resizable;

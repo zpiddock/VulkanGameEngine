@@ -44,17 +44,15 @@ struct KLINGON_API KlingonConfig {
 
     // ========== Window Configuration ==========
     struct Window {
-        std::string title = "Klingon Engine";
         uint32_t width = 1920;
         uint32_t height = 1080;
         bool resizable = true;
-        bool maximized = false;
+        bool maximized = true;
         bool fullscreen = false;
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(title),
-               CEREAL_NVP(width),
+            ar(CEREAL_NVP(width),
                CEREAL_NVP(height),
                CEREAL_NVP(resizable),
                CEREAL_NVP(maximized),
@@ -142,12 +140,14 @@ struct KLINGON_API KlingonConfig {
             bool enabled = true;
             uint32_t tile_size = 16;  // 16x16 pixel tiles
             uint32_t max_lights_per_tile = 256;
+            bool enable_depth_prepass = true;
 
             template<class Archive>
             void serialize(Archive& ar) {
                 ar(CEREAL_NVP(enabled),
                    CEREAL_NVP(tile_size),
-                   CEREAL_NVP(max_lights_per_tile));
+                   CEREAL_NVP(max_lights_per_tile),
+                   CEREAL_NVP(enable_depth_prepass));
             }
         } forward_plus;
 
@@ -177,11 +177,24 @@ struct KLINGON_API KlingonConfig {
             }
         } performance;
 
+        // Offscreen rendering settings
+        struct Offscreen {
+            bool enabled = true;
+            std::string color_format = "rgba16f";  // "rgba8", "rgba16f", "rgba32f"
+
+            template<class Archive>
+            void serialize(Archive& ar) {
+                ar(CEREAL_NVP(enabled),
+                   CEREAL_NVP(color_format));
+            }
+        } offscreen;
+
         template<class Archive>
         void serialize(Archive& ar) {
             ar(CEREAL_NVP(forward_plus),
                CEREAL_NVP(debug),
-               CEREAL_NVP(performance));
+               CEREAL_NVP(performance),
+               CEREAL_NVP(offscreen));
         }
     } renderer;
 

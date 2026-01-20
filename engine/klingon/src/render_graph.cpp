@@ -955,42 +955,6 @@ namespace klingon {
     // ============================================================================
     // PassExecutionContext resource access implementation
     // ============================================================================
+    // NOTE: PassExecutionContext methods are now implemented as inline functions
+    // in batleth/render_graph_pass_impl.hpp (included at end of render_graph.hpp)
 } // namespace klingon
-
-// Implement PassExecutionContext methods that need CompiledRenderGraph
-namespace batleth {
-    auto PassExecutionContext::get_image(ResourceHandle handle) const -> VkImage {
-        if (graph) {
-            return static_cast<const klingon::CompiledRenderGraph *>(graph)->get_image(handle);
-        }
-        return VK_NULL_HANDLE;
-    }
-
-    auto PassExecutionContext::get_image_view(ResourceHandle handle) const -> VkImageView {
-        if (graph) {
-            return static_cast<const klingon::CompiledRenderGraph *>(graph)->get_image_view(handle);
-        }
-        return VK_NULL_HANDLE;
-    }
-
-    auto PassExecutionContext::get_buffer(ResourceHandle handle) const -> VkBuffer {
-        if (graph) {
-            return static_cast<const klingon::CompiledRenderGraph *>(graph)->get_buffer(handle);
-        }
-        return VK_NULL_HANDLE;
-    }
-
-    auto PassExecutionContext::get_image_format(ResourceHandle handle) const -> VkFormat {
-        if (graph) {
-            return static_cast<const klingon::CompiledRenderGraph *>(graph)->get_image_format(handle);
-        }
-        return VK_FORMAT_UNDEFINED;
-    }
-
-    auto PassExecutionContext::get_image_extent(ResourceHandle handle) const -> VkExtent3D {
-        if (graph) {
-            return static_cast<const klingon::CompiledRenderGraph *>(graph)->get_image_extent(handle);
-        }
-        return {0, 0, 0};
-    }
-} // namespace batleth

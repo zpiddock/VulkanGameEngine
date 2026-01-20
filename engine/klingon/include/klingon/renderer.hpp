@@ -19,6 +19,7 @@
 #include "batleth/descriptors.hpp"
 #include "render_systems/point_light_system.hpp"
 #include "render_systems/simple_render_system.hpp"
+#include "render_systems/blit_render_system.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -211,8 +212,12 @@ namespace klingon {
         // Render systems
         std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
         std::unique_ptr<PointLightSystem> m_point_light_system;
+        std::unique_ptr<BlitRenderSystem> m_blit_render_system;
         std::vector<std::unique_ptr<IRenderSystem> > m_custom_render_systems;
         bool m_debug_rendering_enabled = true;
+
+        // Offscreen rendering resources
+        VkSampler m_offscreen_sampler = VK_NULL_HANDLE;
 
         // ImGui callback
         ImGuiCallback m_imgui_callback;

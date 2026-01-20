@@ -34,6 +34,28 @@ namespace klingon {
         create_command_buffers();
         create_sync_objects();
 
+        // Create offscreen sampler (if offscreen rendering enabled)
+        if (m_config.renderer.offscreen.enabled) {
+            VkSamplerCreateInfo sampler_info{};
+            sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+            sampler_info.magFilter = VK_FILTER_LINEAR;
+            sampler_info.minFilter = VK_FILTER_LINEAR;
+            sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            sampler_info.anisotropyEnable = VK_FALSE;
+            sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+            sampler_info.unnormalizedCoordinates = VK_FALSE;
+            sampler_info.compareEnable = VK_FALSE;
+            sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+            if (::vkCreateSampler(m_device->get_logical_device(), &sampler_info, nullptr,
+                                  &m_offscreen_sampler) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create offscreen sampler");
+            }
+        }
+
         // Initialize ImGui if requested
         if (m_config.renderer.debug.enable_imgui) {
             FED_INFO("Initializing ImGui");
@@ -71,6 +93,11 @@ namespace klingon {
 
         if (m_command_pool != VK_NULL_HANDLE) {
             ::vkDestroyCommandPool(m_device->get_logical_device(), m_command_pool, nullptr);
+        }
+
+        // Cleanup offscreen sampler
+        if (m_offscreen_sampler != VK_NULL_HANDLE) {
+            ::vkDestroySampler(m_device->get_logical_device(), m_offscreen_sampler, nullptr);
         }
 
         // Cleanup depth resources
@@ -708,7 +735,7 @@ namespace klingon {
     }
 
     auto Renderer::build_default_render_graph() -> void {
-        FED_INFO("Building default render graph");
+        FED_INFO("Building Forward+ render graph");
 
         auto extent = m_swapchain->get_extent();
 
@@ -734,29 +761,77 @@ namespace klingon {
             );
         }
 
+        if (!m_blit_render_system && m_config.renderer.offscreen.enabled) {
+            m_blit_render_system = std::make_unique<BlitRenderSystem>(
+                *m_device,
+                m_swapchain->get_format()
+            );
+        }
+
         // Create render graph
         m_render_graph = std::make_unique<RenderGraph>(*this);
 
         auto &builder = m_render_graph->begin_build();
 
-        // Create depth buffer as transient resource
+        // Compute Forward+ tile dimensions
+        uint32_t tile_size = m_config.renderer.forward_plus.tile_size;
+        uint32_t tile_count_x = (extent.width + tile_size - 1) / tile_size;
+        uint32_t tile_count_y = (extent.height + tile_size - 1) / tile_size;
+        uint32_t max_lights_per_tile = m_config.renderer.forward_plus.max_lights_per_tile;
+
+        FED_DEBUG("Forward+ configuration: tiles={}x{}, tile_size={}, max_lights_per_tile={}",
+                  tile_count_x, tile_count_y, tile_size, max_lights_per_tile);
+
+        // Create resources
+
+        // Depth buffer (shared across passes)
         auto depth_buffer = builder.create_image(
             "depth",
             batleth::ImageResourceDesc::create_2d(
                 m_depth_format,
                 extent.width,
                 extent.height,
-                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled in compute shader
             )
         );
 
-        // Get backbuffer handle
+        // Offscreen color buffer (if enabled)
+        batleth::ResourceHandle color_target;
+        if (m_config.renderer.offscreen.enabled) {
+            VkFormat color_format = VK_FORMAT_R16G16B16A16_SFLOAT;  // HDR default
+            if (m_config.renderer.offscreen.color_format == "rgba8") {
+                color_format = VK_FORMAT_R8G8B8A8_UNORM;
+            } else if (m_config.renderer.offscreen.color_format == "rgba32f") {
+                color_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            }
+
+            color_target = builder.create_image(
+                "offscreen_color",
+                batleth::ImageResourceDesc::create_2d(
+                    color_format,
+                    extent.width,
+                    extent.height,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                    VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled for post-processing
+                )
+            );
+
+            FED_DEBUG("Created offscreen color buffer: format={}",
+                      m_config.renderer.offscreen.color_format.c_str());
+        } else {
+            // Use backbuffer directly (no offscreen rendering)
+            color_target = m_render_graph->get_backbuffer_handle();
+            FED_DEBUG("Using backbuffer directly (offscreen rendering disabled)");
+        }
+
+        // Get backbuffer handle for final output
         auto backbuffer = m_render_graph->get_backbuffer_handle();
 
-        // Main geometry pass
+        // Main geometry/shading pass
         builder.add_graphics_pass(
-                    "geometry",
-                    [this, depth_buffer, backbuffer](const batleth::PassExecutionContext &ctx) {
+                    "forward_shading",
+                    [this](const batleth::PassExecutionContext &ctx) {
                         if (!m_active_scene) return;
 
                         // Create frame info
@@ -783,28 +858,49 @@ namespace klingon {
                         }
                     }
                 )
-                .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
+                .set_color_attachment(0, color_target, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
                 .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
-                .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
+                .write(color_target, batleth::ResourceUsage::ColorAttachment)
                 .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+
+        // Blit offscreen to backbuffer (if offscreen rendering is enabled)
+        if (m_config.renderer.offscreen.enabled) {
+            builder.add_graphics_pass(
+                        "blit_to_backbuffer",
+                        [this, color_target](const batleth::PassExecutionContext &ctx) {
+                            // Get the offscreen color buffer image view
+                            VkImageView offscreen_view = ctx.get_image_view(color_target);
+
+                            // Render fullscreen blit
+                            m_blit_render_system->render(ctx.command_buffer, offscreen_view, m_offscreen_sampler);
+                        }
+                    )
+                    .read(color_target, batleth::ResourceUsage::SampledImage)
+                    .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR)
+                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment);
+        }
 
         // ImGui pass (if enabled)
         if (m_imgui_context) {
             builder.add_graphics_pass(
                         "imgui",
-                        [this, depth_buffer, backbuffer](const batleth::PassExecutionContext &ctx) {
+                        [this](const batleth::PassExecutionContext &ctx) {
                             m_imgui_context->render(ctx.command_buffer);
                         }
                     )
-                    .set_color_attachment(0, backbuffer, VK_ATTACHMENT_LOAD_OP_LOAD, {{0.01f, 0.01f, 0.01f, 1.0f}})
-                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment)
-                    .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+                    .set_color_attachment(
+                        0,
+                        backbuffer,
+                        VK_ATTACHMENT_LOAD_OP_LOAD  // Keep previous rendering
+                    )
+                    .read(backbuffer, batleth::ResourceUsage::ColorAttachment)
+                    .write(backbuffer, batleth::ResourceUsage::ColorAttachment);
         }
 
         m_render_graph->compile();
         m_last_render_extent = extent;
 
-        FED_INFO("Render graph compiled with {} passes", m_render_graph->get_pass_count());
+        FED_INFO("Forward+ render graph compiled with {} passes", m_render_graph->get_pass_count());
     }
 
     auto Renderer::should_rebuild_render_graph() const -> bool {
