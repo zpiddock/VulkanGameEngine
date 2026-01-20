@@ -3,6 +3,7 @@
 #include "klingon/scene.hpp"
 #include "federation/core.hpp"
 #include "federation/log.hpp"
+#include "federation/config_manager.hpp"
 #include "borg/window.hpp"
 #include "borg/input.hpp"
 
@@ -10,31 +11,41 @@
 #include <imgui_impl_glfw.h>
 
 namespace klingon {
-    Engine::Engine(const Config &config) {
-        FED_INFO("Initializing Klingon Engine");
+    // KlingonConfig constructor
+    Engine::Engine(const KlingonConfig& config)
+        : m_config{config} {
+
+        FED_INFO("Initializing Klingon Engine: {}", config.application.name.c_str());
 
         m_core = std::make_unique<federation::Core>();
         m_core->initialize();
 
+        // Create window from config
         borg::Window::Config window_config{};
-        window_config.title = config.application_name;
-        window_config.width = config.window_width;
-        window_config.height = config.window_height;
-
+        window_config.title = config.window.title;
+        window_config.width = config.window.width;
+        window_config.height = config.window.height;
+        window_config.resizable = config.window.resizable;
+        window_config.maximized = config.window.maximized;
         m_window = std::make_unique<borg::Window>(window_config);
 
-        // Create input manager (must be after window)
+        // Create input handler (must be after window)
         m_input = std::make_unique<borg::Input>(*m_window);
 
+        // Create renderer from config
         Renderer::Config renderer_config{};
-        renderer_config.application_name = config.application_name;
-        renderer_config.enable_validation = config.enable_validation;
-        renderer_config.enable_imgui = config.enable_imgui;
-
+        renderer_config.application_name = config.application.name.c_str();
+        renderer_config.application_version = VK_MAKE_VERSION(
+            config.application.version_major,
+            config.application.version_minor,
+            config.application.version_patch
+        );
+        renderer_config.enable_validation = config.vulkan.instance.enable_validation;
+        renderer_config.enable_imgui = config.renderer.debug.enable_imgui;
         m_renderer = std::make_unique<Renderer>(renderer_config, *m_window);
 
         // Wire up ImGui input callbacks if enabled
-        if (config.enable_imgui) {
+        if (config.renderer.debug.enable_imgui) {
             m_input->set_pre_key_callback(ImGui_ImplGlfw_KeyCallback);
             m_input->set_pre_cursor_callback(ImGui_ImplGlfw_CursorPosCallback);
             m_input->set_pre_mouse_button_callback(ImGui_ImplGlfw_MouseButtonCallback);
@@ -42,7 +53,30 @@ namespace klingon {
             FED_DEBUG("ImGui input callbacks wired to Input system");
         }
 
-        FED_INFO("Klingon Engine initialized");
+        FED_INFO("Klingon Engine initialized successfully");
+    }
+
+    // Factory method to create from file
+    auto Engine::from_file(const std::filesystem::path& config_path) -> Engine {
+        FED_INFO("Loading engine config from: {}", config_path.string().c_str());
+        auto config = federation::ConfigManager::load<KlingonConfig>(config_path);
+        return Engine{config};
+    }
+
+    // Config reload method
+    auto Engine::reload_config(const std::filesystem::path& config_path) -> void {
+        FED_INFO("Reloading config from: {}", config_path.string().c_str());
+        m_config = federation::ConfigManager::load<KlingonConfig>(config_path);
+
+        // Only reload runtime-changeable settings
+        // Vulkan settings require full restart
+
+        FED_WARN("Config reloaded. Vulkan settings require engine restart to apply.");
+    }
+
+    // Config save method
+    auto Engine::save_config(const std::filesystem::path& config_path) const -> bool {
+        return federation::ConfigManager::save(m_config, config_path);
     }
 
     Engine::~Engine() {
@@ -111,7 +145,7 @@ namespace klingon {
         return m_renderer->is_debug_rendering_enabled();
     }
 
-    auto Engine::set_imgui_callback(ImGuiCallback callback) -> void {
+    auto Engine::set_imgui_callback(const ImGuiCallback &callback) -> void {
         m_imgui_callback = callback;
         // Pass to renderer immediately so it's ready when rendering starts
         if (m_renderer) {

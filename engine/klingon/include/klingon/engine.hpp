@@ -3,6 +3,8 @@
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <functional>
+#include <filesystem>
+#include "klingon/config.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -16,6 +18,7 @@
 
 namespace federation {
     class Core;
+    class ConfigManager;
 }
 
 namespace borg {
@@ -39,19 +42,20 @@ namespace klingon {
  */
     class KLINGON_API Engine {
     public:
-        struct Config {
-            const char *application_name = "Klingon Application";
-            std::uint32_t window_width = 1280;
-            std::uint32_t window_height = 720;
-            bool enable_validation = true;
-            bool enable_imgui = false; // Enable ImGui for editor
-        };
-
-        // Callback types (old render callbacks removed)
+        // Callback types
         using UpdateCallback = std::function<void(float delta_time)>;
         using ImGuiCallback = std::function<void()>;
 
-        explicit Engine(const Config &config);
+        /**
+         * Create engine from unified KlingonConfig.
+         */
+        explicit Engine(const KlingonConfig& config);
+
+        /**
+         * Create engine from config file.
+         * If file doesn't exist, creates it with defaults.
+         */
+        static auto from_file(const std::filesystem::path& config_path) -> Engine;
 
         ~Engine();
 
@@ -73,7 +77,7 @@ namespace klingon {
      * Set callback for ImGui rendering
      * @param callback Function called during ImGui phase (if enabled)
      */
-        auto set_imgui_callback(ImGuiCallback callback) -> void;
+        auto set_imgui_callback(const ImGuiCallback &callback) -> void;
 
         /**
      * Set the active scene for rendering
@@ -107,11 +111,29 @@ namespace klingon {
      */
         auto shutdown() -> void;
 
+        /**
+         * Reload configuration from file.
+         * WARNING: Only certain settings can be reloaded at runtime.
+         * Vulkan-related settings require engine restart.
+         */
+        auto reload_config(const std::filesystem::path& config_path) -> void;
+
+        /**
+         * Save current configuration to file.
+         */
+        auto save_config(const std::filesystem::path& config_path) const -> bool;
+
+        /**
+         * Get current engine configuration (read-only).
+         */
+        auto get_config() const -> const KlingonConfig& { return m_config; }
+
         auto get_window() -> borg::Window & { return *m_window; };
         auto get_renderer() -> Renderer & { return *m_renderer; };
         auto get_input() -> borg::Input & { return *m_input; };
 
     private:
+        KlingonConfig m_config;  // Unified configuration
         std::unique_ptr<federation::Core> m_core;
         std::unique_ptr<borg::Window> m_window;
         std::unique_ptr<borg::Input> m_input;

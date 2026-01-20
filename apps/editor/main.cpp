@@ -2,6 +2,8 @@
 #include "klingon/scene.hpp"
 #include "klingon/movement_controller.hpp"
 #include "federation/log.hpp"
+#include "federation/config_manager.hpp"
+#include "editor_config.hpp"
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -14,15 +16,17 @@
 auto main() -> int {
     federation::Logger::set_level(federation::LogLevel::Trace);
     try {
-        // Configure engine
-        klingon::Engine::Config config{};
-        config.application_name = "Klingon Editor";
-        config.window_width = 1920;
-        config.window_height = 1080;
-        config.enable_validation = true; // Enable validation in editor builds
-        config.enable_imgui = true; // Enable ImGui for editor UI
+        // Load editor-specific config (includes engine config)
+        auto editor_config = federation::ConfigManager::load<EditorConfig>("editor.json");
 
-        klingon::Engine engine{config};
+        // Override engine config with editor-specific values
+        editor_config.engine.application.name = "Klingon Editor";
+        editor_config.engine.window.width = 1920;
+        editor_config.engine.window.height = 1080;
+        editor_config.engine.vulkan.instance.enable_validation = true;  // Always on for editor
+        editor_config.engine.renderer.debug.enable_imgui = true;  // Always on for editor
+
+        klingon::Engine engine{editor_config.engine};
 
         // Create scene (owns camera automatically)
         klingon::Scene scene;

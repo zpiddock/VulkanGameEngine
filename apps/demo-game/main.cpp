@@ -6,6 +6,8 @@
 #include "borg/input.hpp"
 #include "borg/window.hpp"
 #include "federation/log.hpp"
+#include "federation/config_manager.hpp"
+#include "game_config.hpp"
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -19,15 +21,19 @@
 auto main() -> int {
     try {
         federation::Logger::set_level(federation::LogLevel::Trace);
-        // Create engine
-        klingon::Engine::Config config{};
-        config.application_name = "Klingon Game";
-        config.window_width = 1920;
-        config.window_height = 1080;
-        config.enable_validation = true;
-        config.enable_imgui = true;
 
-        auto engine = klingon::Engine{config};
+        // Load game-specific config (includes engine config)
+        auto game_config = federation::ConfigManager::load<GameConfig>("game.json");
+
+        // Override engine config with game-specific values
+        game_config.engine.application.name = "Klingon Game";
+        game_config.engine.window.width = 1920;
+        game_config.engine.window.height = 1080;
+        game_config.engine.vulkan.instance.enable_validation = true;
+        game_config.engine.renderer.debug.enable_imgui = true;
+
+        // Create engine from game's engine config
+        auto engine = klingon::Engine{game_config.engine};
 
         // Create scene (owns camera automatically)
         klingon::Scene scene;

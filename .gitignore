@@ -72,3 +72,8 @@ compile_commands.json
 
 # Compiled shaders
 *.spv
+
+# Engine configs
+/game.json
+/editor.json
+/engine.json

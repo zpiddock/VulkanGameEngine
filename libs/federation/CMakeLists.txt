@@ -4,6 +4,7 @@
 add_library(federation SHARED
         src/core.cpp
         src/log.cpp
+        src/config_manager.cpp
 )
 
 target_include_directories(federation
@@ -15,6 +16,9 @@ target_include_directories(federation
 )
 
 target_compile_features(federation PUBLIC cxx_std_26)
+
+# Link Cereal for JSON serialization (header-only)
+target_link_libraries(federation PUBLIC cereal::cereal)
 
 # Set output name and versioning
 set_target_properties(federation PROPERTIES
