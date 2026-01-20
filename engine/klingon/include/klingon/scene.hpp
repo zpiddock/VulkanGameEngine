@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <memory>
 #include <unordered_map>
@@ -69,6 +70,17 @@ namespace klingon {
         auto set_name(const std::string &name) -> void;
 
         auto get_name() const -> const std::string &;
+
+        template <class Archive>
+        void serialize(Archive& ar) {
+            ar(
+                m_name,
+                m_game_objects,
+                m_camera,
+                m_camera_transform,
+                m_ambient_light
+            );
+        }
 
     private:
         std::string m_name = "Untitled Scene";

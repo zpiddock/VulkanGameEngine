@@ -4,6 +4,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
+#include <cereal/cereal.hpp>
+
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
 #define KLINGON_API __declspec(dllexport)
@@ -96,11 +98,16 @@ namespace klingon {
             const glm::vec3 &rotation
         ) -> void;
 
-        auto get_projection() const -> const glm::mat4 & { return m_projection; }
-        auto get_view() const -> const glm::mat4 & { return m_view; }
-        auto get_view_projection() const -> glm::mat4 { return m_projection * m_view; }
-        auto get_inverse_view() const -> const glm::mat4 & { return m_inverse_view; }
-        auto get_position() const -> glm::vec3 { return glm::vec3(m_inverse_view[3]); }
+        [[nodiscard]] auto get_projection() const -> const glm::mat4 & { return m_projection; }
+        [[nodiscard]] auto get_view() const -> const glm::mat4 & { return m_view; }
+        [[nodiscard]] auto get_view_projection() const -> glm::mat4 { return m_projection * m_view; }
+        [[nodiscard]] auto get_inverse_view() const -> const glm::mat4 & { return m_inverse_view; }
+        [[nodiscard]] auto get_position() const -> glm::vec3 { return glm::vec3{m_inverse_view[3]}; }
+
+        template <class Archive>
+        void serialize(Archive& ar) {
+            ar(m_projection, m_view, m_inverse_view);
+        }
 
     private:
         glm::mat4 m_projection{1.f};

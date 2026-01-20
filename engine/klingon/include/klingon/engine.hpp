@@ -132,6 +132,9 @@ namespace klingon {
         auto get_renderer() -> Renderer & { return *m_renderer; };
         auto get_input() -> borg::Input & { return *m_input; };
 
+       auto save_scene(Scene* scene, const std::filesystem::path& filepath) const -> bool;
+       auto load_scene(Scene* scene, const std::filesystem::path& filepath) -> bool;
+
     private:
         KlingonConfig m_config;  // Unified configuration
         std::unique_ptr<federation::Core> m_core;

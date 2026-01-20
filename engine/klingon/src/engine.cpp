@@ -143,4 +143,11 @@ namespace klingon {
             m_renderer->set_imgui_callback(m_imgui_callback);
         }
     }
+
+    auto Engine::save_scene(Scene *scene, const std::filesystem::path &filepath) const -> bool {
+
+    }
+
+    auto Engine::load_scene(Scene *scene, const std::filesystem::path &filepath) -> bool {
+    }
 } // namespace klingon

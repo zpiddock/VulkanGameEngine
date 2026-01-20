@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cereal/cereal.hpp>
+
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
 #define KLINGON_API __declspec(dllexport)
@@ -37,5 +39,10 @@ namespace klingon {
      * This is the transpose of the inverse of the upper-left 3x3 of the model matrix
      */
         auto normal_matrix() const -> glm::mat3;
+
+        template <class Archive>
+        void serialize(Archive& ar) {
+            ar(translation, scale, rotation);
+        }
     };
 } // namespace klingon

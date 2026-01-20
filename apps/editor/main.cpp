@@ -12,6 +12,9 @@
 #include <iostream>
 
 #include "borg/window.hpp"
+#include "klingon/renderer.hpp"
+
+void add_test_objects(klingon::Scene& scene, klingon::Engine& engine);
 
 auto main() -> int {
     federation::Logger::set_level(federation::LogLevel::Trace);
@@ -29,7 +32,7 @@ auto main() -> int {
         klingon::Engine engine{editor_config.engine};
 
         // Create scene (owns camera automatically)
-        klingon::Scene scene;
+        klingon::Scene scene{};
         scene.set_name("Editor Scene");
         scene.get_camera_transform().translation.z = -5.0f; // Start camera further back for editor
 
@@ -47,6 +50,8 @@ auto main() -> int {
             engine.get_window().set_input_mode(GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
 
+        add_test_objects(scene, engine);
+
         // Set active scene (engine handles all rendering automatically)
         engine.set_active_scene(&scene);
 
@@ -61,6 +66,9 @@ auto main() -> int {
             // Main menu bar
             if (::ImGui::BeginMainMenuBar()) {
                 if (::ImGui::BeginMenu("File")) {
+                    if (::ImGui::MenuItem("Save Scene")) {
+                        engine.save_scene(engine.get_active_scene(), "editor_scene.json");
+                    }
                     if (::ImGui::MenuItem("Exit")) {
                         engine.shutdown();
                     }
@@ -138,5 +146,52 @@ auto main() -> int {
     } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << '\n';
         return EXIT_FAILURE;
+    }
+}
+
+auto add_test_objects(klingon::Scene& scene, klingon::Engine& engine) -> void {
+
+    auto &device = engine.get_renderer().get_device_ref();
+
+    // Load smooth vase
+    auto smooth_vase = klingon::GameObject::create_game_object();
+    smooth_vase.model = klingon::Mesh::create_from_file(device, "assets/models/smooth_vase.obj");
+    smooth_vase.transform.translation = {-0.5f, 0.5f, 0.0f};
+    smooth_vase.transform.scale = glm::vec3{3.f};
+    scene.add_game_object(std::move(smooth_vase));
+
+    // Load flat vase
+    auto flat_vase = klingon::GameObject::create_game_object();
+    flat_vase.model = klingon::Mesh::create_from_file(device, "assets/models/flat_vase.obj");
+    flat_vase.transform.translation = {0.5f, 0.5f, 0.0f};
+    flat_vase.transform.scale = glm::vec3{3.f};
+    scene.add_game_object(std::move(flat_vase));
+
+    // Load floor (quad)
+    auto floor = klingon::GameObject::create_game_object();
+    floor.model = klingon::Mesh::create_from_file(device, "assets/models/quad.obj");
+    floor.transform.translation = {0.f, 0.5f, 0.f};
+    floor.transform.scale = glm::vec3{3.f, 1.f, 3.f};
+    scene.add_game_object(std::move(floor));
+
+    // Create point lights
+    std::vector<glm::vec3> light_colors{
+                {1.f, 0.1f, 0.1f},
+                {0.1f, 0.1f, 1.f},
+                {0.1f, 1.f, 0.1f},
+                {1.f, 1.f, 0.1f},
+                {0.1f, 1.f, 1.f},
+                {1.f, 0.1f, 1.f}
+    };
+
+    for (std::size_t i = 0; i < light_colors.size(); i++) {
+        auto point_light = klingon::GameObject::create_point_light(0.2f, 0.1f, light_colors[i]);
+        auto rotate_light = glm::rotate(
+            glm::mat4(1.f),
+            (static_cast<float>(i) * glm::two_pi<float>()) / static_cast<float>(light_colors.size()),
+            {0.f, -1.f, 0.f}
+        );
+        point_light.transform.translation = glm::vec3(rotate_light * glm::vec4(-1.f, -1.f, -1.f, 1.f));
+        scene.add_game_object(std::move(point_light));
     }
 }

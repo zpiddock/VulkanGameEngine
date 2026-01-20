@@ -25,6 +25,11 @@ namespace klingon {
  */
     struct PointLightComponent {
         float light_intensity = 1.0f;
+
+        template <class Archive>
+        void serialize(Archive& ar) {
+            ar(light_intensity);
+        }
     };
 
     /**
@@ -68,6 +73,16 @@ namespace klingon {
         Transform transform{};
         std::shared_ptr<Mesh> model{};
         std::unique_ptr<PointLightComponent> point_light = nullptr;
+
+        template <class Archive>
+        void serialize(Archive& ar) {
+            ar(
+                m_id,
+                color,
+                transform,
+                point_light
+            );
+        }
 
     private:
         GameObject(id_t obj_id) : m_id(obj_id) {
