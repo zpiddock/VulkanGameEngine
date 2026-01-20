@@ -33,16 +33,7 @@ namespace klingon {
         m_input = std::make_unique<borg::Input>(*m_window);
 
         // Create renderer from config
-        Renderer::Config renderer_config{};
-        renderer_config.application_name = config.application.name.c_str();
-        renderer_config.application_version = VK_MAKE_VERSION(
-            config.application.version_major,
-            config.application.version_minor,
-            config.application.version_patch
-        );
-        renderer_config.enable_validation = config.vulkan.instance.enable_validation;
-        renderer_config.enable_imgui = config.renderer.debug.enable_imgui;
-        m_renderer = std::make_unique<Renderer>(renderer_config, *m_window);
+        m_renderer = std::make_unique<Renderer>(config, *m_window);
 
         // Wire up ImGui input callbacks if enabled
         if (config.renderer.debug.enable_imgui) {

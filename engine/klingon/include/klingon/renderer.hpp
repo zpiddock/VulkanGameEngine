@@ -8,6 +8,7 @@
 #include "imgui_context.hpp"
 #include "render_graph.hpp"
 #include "scene.hpp"
+#include "config.hpp"
 #include "batleth/device.hpp"
 #include "batleth/instance.hpp"
 #include "batleth/surface.hpp"
@@ -38,14 +39,7 @@ namespace klingon {
      */
     class KLINGON_API Renderer {
     public:
-        struct Config {
-            const char *application_name = "Klingon Application";
-            std::uint32_t application_version = 1;
-            bool enable_validation = true;
-            bool enable_imgui = false; // Enable ImGui for editor
-        };
-
-        Renderer(const Config &config, borg::Window &window);
+        Renderer(const KlingonConfig &config, borg::Window &window);
 
         ~Renderer();
 
@@ -166,7 +160,7 @@ namespace klingon {
 
 
         borg::Window &m_window;
-        Config m_config;
+        KlingonConfig m_config;
 
         // Vulkan objects - ordered for proper RAII destruction
         // Destruction happens in REVERSE order of declaration

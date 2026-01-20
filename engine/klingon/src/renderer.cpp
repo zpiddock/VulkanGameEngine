@@ -22,7 +22,7 @@
 #include <vector>
 
 namespace klingon {
-    Renderer::Renderer(const Config &config, borg::Window &window)
+    Renderer::Renderer(const KlingonConfig &config, borg::Window &window)
         : m_window(window), m_config(config) {
         FED_INFO("Initializing renderer");
 
@@ -35,7 +35,7 @@ namespace klingon {
         create_sync_objects();
 
         // Initialize ImGui if requested
-        if (m_config.enable_imgui) {
+        if (m_config.renderer.debug.enable_imgui) {
             FED_INFO("Initializing ImGui");
             m_imgui_context = std::make_unique<ImGuiContext>(
                 m_window.get_native_handle(),
@@ -389,20 +389,24 @@ namespace klingon {
         }
 
         // Add debug utils extension if validation is enabled
-        if (m_config.enable_validation) {
+        if (m_config.vulkan.instance.enable_validation) {
             extensions.push_back("VK_EXT_debug_utils");
             FED_DEBUG("  - VK_EXT_debug_utils (for validation)");
         }
 
         batleth::Instance::Config instance_config{};
-        instance_config.application_name = m_config.application_name;
-        instance_config.application_version = m_config.application_version;
+        instance_config.application_name = m_config.application.name;
+        instance_config.application_version = VK_MAKE_VERSION(
+            m_config.application.version_major,
+            m_config.application.version_minor,
+            m_config.application.version_patch
+        );
         instance_config.engine_name = "Klingon Engine";
         instance_config.engine_version = 1;
         instance_config.extensions = extensions;
-        instance_config.enable_validation = m_config.enable_validation;
+        instance_config.enable_validation = m_config.vulkan.instance.enable_validation;
 
-        if (m_config.enable_validation) {
+        if (m_config.vulkan.instance.enable_validation) {
             instance_config.validation_layers = {"VK_LAYER_KHRONOS_validation"};
         }
 
