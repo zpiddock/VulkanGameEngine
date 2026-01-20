@@ -207,32 +207,24 @@ namespace batleth {
         multisampling.sampleShadingEnable = VK_FALSE;
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-        // Color blending - determine number of attachments
-        std::uint32_t num_color_attachments = 1;
-        if (!m_config.color_formats.empty()) {
-            num_color_attachments = static_cast<std::uint32_t>(m_config.color_formats.size());
-        }
-
-        // Create color blend attachment state for each color attachment
-        std::vector<VkPipelineColorBlendAttachmentState> color_blend_attachments(num_color_attachments);
-        for (auto &attachment: color_blend_attachments) {
-            attachment.blendEnable = VK_TRUE;
-            attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-            attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            attachment.colorBlendOp = VK_BLEND_OP_ADD;
-            attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-            attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-            attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-        }
+        // Color blending
+        VkPipelineColorBlendAttachmentState color_blend_attachment{};
+        color_blend_attachment.blendEnable = VK_TRUE;
+        color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+        color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo color_blending{};
         color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         color_blending.logicOpEnable = VK_FALSE;
         color_blending.logicOp = VK_LOGIC_OP_COPY;
-        color_blending.attachmentCount = num_color_attachments;
-        color_blending.pAttachments = color_blend_attachments.data();
+        color_blending.attachmentCount = 1;
+        color_blending.pAttachments = &color_blend_attachment;
 
         // Dynamic state (viewport and scissor)
         std::vector<VkDynamicState> dynamic_states = {
@@ -255,28 +247,18 @@ namespace batleth {
         depth_stencil.stencilTestEnable = VK_FALSE;
 
         // Dynamic rendering info (Vulkan 1.3)
-        // Prefer color_formats vector if provided, otherwise fall back to single color_format
-        std::vector<VkFormat> color_attachment_formats;
-        if (!m_config.color_formats.empty()) {
-            color_attachment_formats = m_config.color_formats;
-        } else if (m_config.color_format != VK_FORMAT_UNDEFINED) {
-            color_attachment_formats.push_back(m_config.color_format);
-        }
-
         VkPipelineRenderingCreateInfo rendering_info{};
         rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        rendering_info.colorAttachmentCount = static_cast<std::uint32_t>(color_attachment_formats.size());
-        rendering_info.pColorAttachmentFormats = color_attachment_formats.empty()
-                                                     ? nullptr
-                                                     : color_attachment_formats.data();
+        rendering_info.colorAttachmentCount = 1;
+        rendering_info.pColorAttachmentFormats = &m_config.color_format;
         rendering_info.depthAttachmentFormat = m_config.depth_format;
 
         // Create graphics pipeline
         VkGraphicsPipelineCreateInfo pipeline_info{};
         pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
-        // Use dynamic rendering if color format(s) provided, otherwise use legacy render pass
-        if (m_config.color_format != VK_FORMAT_UNDEFINED || !m_config.color_formats.empty()) {
+        // Use dynamic rendering if color format is provided, otherwise use legacy render pass
+        if (m_config.color_format != VK_FORMAT_UNDEFINED) {
             pipeline_info.pNext = &rendering_info;
             pipeline_info.renderPass = VK_NULL_HANDLE;
         } else {

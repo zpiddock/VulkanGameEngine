@@ -33,8 +33,7 @@ namespace batleth {
         struct Config {
             VkDevice device = VK_NULL_HANDLE;
             VkRenderPass render_pass = VK_NULL_HANDLE; // Optional, for legacy render pass mode
-            VkFormat color_format = VK_FORMAT_UNDEFINED; // For dynamic rendering (single attachment)
-            std::vector<VkFormat> color_formats; // For dynamic rendering (multiple attachments - deferred rendering)
+            VkFormat color_format = VK_FORMAT_UNDEFINED; // For dynamic rendering
             VkFormat depth_format = VK_FORMAT_UNDEFINED; // For dynamic rendering depth attachment
             VkExtent2D viewport_extent = {1280, 720};
 

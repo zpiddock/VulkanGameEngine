@@ -9,31 +9,33 @@
 #include "batleth/shader.hpp"
 
 namespace klingon {
-    GBufferRenderSystem::GBufferRenderSystem(batleth::Device &device, VkDescriptorSetLayout global_set_layout)
+    SimpleRenderSystem::SimpleRenderSystem(batleth::Device &device, VkFormat swapchain_format,
+                                           VkDescriptorSetLayout global_set_layout)
         : m_device{device}
-          , m_global_set_layout{global_set_layout} {
-        create_pipeline(global_set_layout);
+          , m_global_set_layout{global_set_layout}
+          , m_swapchain_format{swapchain_format} {
+        create_pipeline(swapchain_format, global_set_layout);
     }
 
-    GBufferRenderSystem::~GBufferRenderSystem() {
+    SimpleRenderSystem::~SimpleRenderSystem() {
         // Pipeline is RAII-managed
     }
 
-    auto GBufferRenderSystem::create_pipeline(VkDescriptorSetLayout global_set_layout) -> void {
-        // Load G-buffer shaders instead of simple_shader
+    auto SimpleRenderSystem::create_pipeline(VkFormat swapchain_format,
+                                             VkDescriptorSetLayout global_set_layout) -> void {
         auto vertConfig = batleth::Shader::Config{};
         vertConfig.device = m_device.get_logical_device();
-        vertConfig.filepath = "assets/shaders/gbuffer_generation.vert";
+        vertConfig.filepath = "assets/shaders/simple_shader.vert";
         vertConfig.stage = batleth::Shader::Stage::Vertex;
         vertConfig.enable_hot_reload = true;
-        auto vert_shader = std::make_unique<batleth::Shader>(vertConfig);
+        auto vert_shader_module = batleth::Shader{vertConfig};
 
         auto fragConfig = batleth::Shader::Config{};
         fragConfig.device = m_device.get_logical_device();
-        fragConfig.filepath = "assets/shaders/gbuffer_generation.frag";
+        fragConfig.filepath = "assets/shaders/simple_shader.frag";
         fragConfig.stage = batleth::Shader::Stage::Fragment;
         fragConfig.enable_hot_reload = true;
-        auto frag_shader = std::make_unique<batleth::Shader>(fragConfig);
+        auto frag_shader_module = batleth::Shader{fragConfig};
 
         // Get vertex input descriptions
         auto binding_descriptions = Vertex::get_binding_descriptions();
@@ -45,20 +47,13 @@ namespace klingon {
         push_constant_range.offset = 0;
         push_constant_range.size = sizeof(PushConstantData);
 
-        // Create pipeline config with MULTIPLE color attachments (G-buffer)
+        // Create pipeline config
         batleth::Pipeline::Config pipeline_config{};
         pipeline_config.device = m_device.get_logical_device();
-
-        // G-buffer formats (3 render targets)
-        pipeline_config.color_formats = {
-            VK_FORMAT_R16G16B16A16_SFLOAT, // Position
-            VK_FORMAT_R16G16B16A16_SFLOAT, // Normal
-            VK_FORMAT_R8G8B8A8_UNORM // Albedo
-        };
-
+        pipeline_config.color_format = swapchain_format;
         pipeline_config.depth_format = VK_FORMAT_D32_SFLOAT;
-        pipeline_config.shaders.push_back(vert_shader.get());
-        pipeline_config.shaders.push_back(frag_shader.get());
+        pipeline_config.shaders.push_back(&vert_shader_module);
+        pipeline_config.shaders.push_back(&frag_shader_module);
         pipeline_config.vertex_binding_descriptions = binding_descriptions;
         pipeline_config.vertex_attribute_descriptions = attribute_descriptions;
         pipeline_config.descriptor_set_layouts = {global_set_layout};
@@ -71,15 +66,12 @@ namespace klingon {
         pipeline_config.enable_depth_write = true;
         pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS;
 
-        m_shaders.push_back(std::move(vert_shader));
-        m_shaders.push_back(std::move(frag_shader));
         m_pipeline = std::make_unique<batleth::Pipeline>(pipeline_config);
-
-        FED_INFO("GBufferRenderSystem created successfully");
+        FED_INFO("SimpleRenderSystem created successfully");
     }
 
-    auto GBufferRenderSystem::render(FrameInfo &frame_info) -> void {
-        // Rendering logic unchanged - same as forward renderer
+    auto SimpleRenderSystem::render(FrameInfo &frame_info) -> void {
+        // Bind pipeline
         ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
         // Bind descriptor sets
@@ -116,10 +108,10 @@ namespace klingon {
         }
     }
 
-    auto GBufferRenderSystem::on_swapchain_recreate(VkFormat format) -> void {
-        FED_INFO("GBufferRenderSystem rebuilding pipeline for new swapchain");
+    auto SimpleRenderSystem::on_swapchain_recreate(VkFormat format) -> void {
+        FED_INFO("SimpleRenderSystem rebuilding pipeline for new swapchain format");
+        m_swapchain_format = format;
         m_pipeline.reset();
-        m_shaders.clear();
-        create_pipeline(m_global_set_layout);
+        create_pipeline(format, m_global_set_layout);
     }
 } // namespace klingon
