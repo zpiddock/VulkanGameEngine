@@ -11,6 +11,7 @@ namespace klingon {
           , m_swapchain_format{swapchain_format} {
         create_descriptor_set_layout();
         create_descriptor_pool();
+        allocate_descriptor_set();
         create_pipeline(swapchain_format);
     }
 
@@ -44,21 +45,41 @@ namespace klingon {
     }
 
     auto BlitRenderSystem::create_descriptor_pool() -> void {
-        // Pool size for a single combined image sampler
+        // Pool size for combined image samplers (one per frame in flight)
+        constexpr uint32_t MAX_FRAMES = 2;  // Must match Renderer::MAX_FRAMES_IN_FLIGHT
+
         VkDescriptorPoolSize pool_size{};
         pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        pool_size.descriptorCount = 10; // Allow for multiple descriptor sets
+        pool_size.descriptorCount = MAX_FRAMES;
 
         VkDescriptorPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.poolSizeCount = 1;
         pool_info.pPoolSizes = &pool_size;
-        pool_info.maxSets = 10;
-        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.maxSets = MAX_FRAMES;
+        pool_info.flags = 0;  // No flags - we don't free individual sets
 
         if (::vkCreateDescriptorPool(m_device.get_logical_device(), &pool_info, nullptr,
                                      &m_descriptor_pool) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create blit descriptor pool");
+        }
+    }
+
+    auto BlitRenderSystem::allocate_descriptor_set() -> void {
+        constexpr uint32_t MAX_FRAMES = 2;  // Must match Renderer::MAX_FRAMES_IN_FLIGHT
+        m_descriptor_sets.resize(MAX_FRAMES);
+
+        // Allocate all descriptor sets at once
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES, m_descriptor_set_layout);
+
+        VkDescriptorSetAllocateInfo alloc_info{};
+        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        alloc_info.descriptorPool = m_descriptor_pool;
+        alloc_info.descriptorSetCount = MAX_FRAMES;
+        alloc_info.pSetLayouts = layouts.data();
+
+        if (::vkAllocateDescriptorSets(m_device.get_logical_device(), &alloc_info, m_descriptor_sets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate blit descriptor sets");
         }
     }
 
@@ -100,20 +121,8 @@ namespace klingon {
         FED_INFO("BlitRenderSystem created successfully");
     }
 
-    auto BlitRenderSystem::update_descriptor_set(VkImageView image_view, VkSampler sampler) -> VkDescriptorSet {
-        // Allocate descriptor set
-        VkDescriptorSetAllocateInfo alloc_info{};
-        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        alloc_info.descriptorPool = m_descriptor_pool;
-        alloc_info.descriptorSetCount = 1;
-        alloc_info.pSetLayouts = &m_descriptor_set_layout;
-
-        VkDescriptorSet descriptor_set;
-        if (::vkAllocateDescriptorSets(m_device.get_logical_device(), &alloc_info, &descriptor_set) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate blit descriptor set");
-        }
-
-        // Update descriptor set with image view and sampler
+    auto BlitRenderSystem::update_descriptor_set(VkImageView image_view, VkSampler sampler, uint32_t frame_index) -> void {
+        // Update the descriptor set for this frame with new image view and sampler
         VkDescriptorImageInfo image_info{};
         image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         image_info.imageView = image_view;
@@ -121,7 +130,7 @@ namespace klingon {
 
         VkWriteDescriptorSet descriptor_write{};
         descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_write.dstSet = descriptor_set;
+        descriptor_write.dstSet = m_descriptor_sets[frame_index];
         descriptor_write.dstBinding = 0;
         descriptor_write.dstArrayElement = 0;
         descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -129,35 +138,30 @@ namespace klingon {
         descriptor_write.pImageInfo = &image_info;
 
         ::vkUpdateDescriptorSets(m_device.get_logical_device(), 1, &descriptor_write, 0, nullptr);
-
-        return descriptor_set;
     }
 
     auto BlitRenderSystem::render(VkCommandBuffer command_buffer, VkImageView source_image_view,
-                                   VkSampler source_sampler) -> void {
-        // Create temporary descriptor set for this blit
-        auto descriptor_set = update_descriptor_set(source_image_view, source_sampler);
+                                   VkSampler source_sampler, uint32_t frame_index) -> void {
+        // Update the descriptor set for this frame with current source texture
+        update_descriptor_set(source_image_view, source_sampler, frame_index);
 
         // Bind pipeline
         ::vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
-        // Bind descriptor set
+        // Bind descriptor set for this frame
         ::vkCmdBindDescriptorSets(
             command_buffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_pipeline->get_layout(),
             0,
             1,
-            &descriptor_set,
+            &m_descriptor_sets[frame_index],
             0,
             nullptr
         );
 
         // Draw fullscreen triangle (3 vertices, no vertex buffer)
         ::vkCmdDraw(command_buffer, 3, 1, 0, 0);
-
-        // Free descriptor set immediately after use
-        ::vkFreeDescriptorSets(m_device.get_logical_device(), m_descriptor_pool, 1, &descriptor_set);
     }
 
     auto BlitRenderSystem::on_swapchain_recreate(VkFormat format) -> void {

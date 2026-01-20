@@ -744,11 +744,24 @@ namespace klingon {
             create_global_descriptors();
         }
 
+        // Determine render target format (offscreen HDR or swapchain)
+        VkFormat render_target_format = m_swapchain->get_format();
+        if (m_config.renderer.offscreen.enabled) {
+            // Use offscreen HDR format
+            if (m_config.renderer.offscreen.color_format == "rgba8") {
+                render_target_format = VK_FORMAT_R8G8B8A8_UNORM;
+            } else if (m_config.renderer.offscreen.color_format == "rgba32f") {
+                render_target_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            } else {  // rgba16f (default)
+                render_target_format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            }
+        }
+
         // Create render systems if not already created
         if (!m_simple_render_system) {
             m_simple_render_system = std::make_unique<SimpleRenderSystem>(
                 *m_device,
-                m_swapchain->get_format(),
+                render_target_format,
                 m_global_set_layout->get_layout()
             );
         }
@@ -756,7 +769,7 @@ namespace klingon {
         if (!m_point_light_system) {
             m_point_light_system = std::make_unique<PointLightSystem>(
                 *m_device,
-                m_swapchain->get_format(),
+                render_target_format,
                 m_global_set_layout->get_layout()
             );
         }
@@ -785,16 +798,16 @@ namespace klingon {
         // Create resources
 
         // Depth buffer (shared across passes)
-        auto depth_buffer = builder.create_image(
-            "depth",
-            batleth::ImageResourceDesc::create_2d(
-                m_depth_format,
-                extent.width,
-                extent.height,
-                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled in compute shader
-            )
+        // NOTE: Must set is_transient = false because we need SAMPLED_BIT for compute shader
+        auto depth_desc = batleth::ImageResourceDesc::create_2d(
+            m_depth_format,
+            extent.width,
+            extent.height,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled in compute shader
         );
+        depth_desc.is_transient = false;  // Cannot be transient with SAMPLED_BIT
+        auto depth_buffer = builder.create_image("depth", depth_desc);
 
         // Offscreen color buffer (if enabled)
         batleth::ResourceHandle color_target;
@@ -806,16 +819,16 @@ namespace klingon {
                 color_format = VK_FORMAT_R32G32B32A32_SFLOAT;
             }
 
-            color_target = builder.create_image(
-                "offscreen_color",
-                batleth::ImageResourceDesc::create_2d(
-                    color_format,
-                    extent.width,
-                    extent.height,
-                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                    VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled for post-processing
-                )
+            // NOTE: Must set is_transient = false because we need SAMPLED_BIT for blit
+            auto offscreen_desc = batleth::ImageResourceDesc::create_2d(
+                color_format,
+                extent.width,
+                extent.height,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_SAMPLED_BIT  // Can be sampled for post-processing
             );
+            offscreen_desc.is_transient = false;  // Cannot be transient with SAMPLED_BIT
+            color_target = builder.create_image("offscreen_color", offscreen_desc);
 
             FED_DEBUG("Created offscreen color buffer: format={}",
                       m_config.renderer.offscreen.color_format.c_str());
@@ -872,7 +885,7 @@ namespace klingon {
                             VkImageView offscreen_view = ctx.get_image_view(color_target);
 
                             // Render fullscreen blit
-                            m_blit_render_system->render(ctx.command_buffer, offscreen_view, m_offscreen_sampler);
+                            m_blit_render_system->render(ctx.command_buffer, offscreen_view, m_offscreen_sampler, ctx.frame_index);
                         }
                     )
                     .read(color_target, batleth::ResourceUsage::SampledImage)

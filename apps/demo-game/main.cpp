@@ -62,6 +62,12 @@ auto main() -> int {
         smooth_vase.transform.scale = glm::vec3{3.f};
         scene.add_game_object(std::move(smooth_vase));
 
+        // auto humans = klingon::GameObject::create_game_object();
+        // humans.model = klingon::Mesh::create_from_file(device, "assets/models/rigged_textured_model/obj.obj");
+        // humans.transform.rotation = glm::vec3{0.f, glm::radians(180.f), glm::radians(180.f)};
+        // humans.transform.translation = {0.f, 0.f, 0.f};
+        // scene.add_game_object(std::move(humans));
+
         // Load flat vase
         auto flat_vase = klingon::GameObject::create_game_object();
         flat_vase.model = klingon::Mesh::create_from_file(device, "assets/models/flat_vase.obj");

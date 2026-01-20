@@ -37,8 +37,9 @@ namespace klingon {
          * @param command_buffer Command buffer to record commands into
          * @param source_image_view Source texture to sample from
          * @param source_sampler Sampler for the source texture
+         * @param frame_index Current frame index for descriptor set selection
          */
-        auto render(VkCommandBuffer command_buffer, VkImageView source_image_view, VkSampler source_sampler) -> void;
+        auto render(VkCommandBuffer command_buffer, VkImageView source_image_view, VkSampler source_sampler, uint32_t frame_index) -> void;
 
         auto on_swapchain_recreate(VkFormat format) -> void;
 
@@ -46,7 +47,8 @@ namespace klingon {
         auto create_pipeline(VkFormat swapchain_format) -> void;
         auto create_descriptor_set_layout() -> void;
         auto create_descriptor_pool() -> void;
-        auto update_descriptor_set(VkImageView image_view, VkSampler sampler) -> VkDescriptorSet;
+        auto allocate_descriptor_set() -> void;
+        auto update_descriptor_set(VkImageView image_view, VkSampler sampler, uint32_t frame_index) -> void;
 
         batleth::Device &m_device;
         VkFormat m_swapchain_format = VK_FORMAT_UNDEFINED;
@@ -54,5 +56,6 @@ namespace klingon {
         std::unique_ptr<batleth::Pipeline> m_pipeline;
         VkDescriptorSetLayout m_descriptor_set_layout = VK_NULL_HANDLE;
         VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_descriptor_sets;  // One per frame in flight
     };
 } // namespace klingon
