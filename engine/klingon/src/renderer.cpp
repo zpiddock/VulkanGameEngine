@@ -781,6 +781,14 @@ namespace klingon {
             );
         }
 
+        if (!m_depth_prepass_system && m_config.renderer.forward_plus.enable_depth_prepass) {
+            m_depth_prepass_system = std::make_unique<DepthPrepassSystem>(
+                *m_device,
+                m_depth_format,
+                m_global_set_layout->get_layout()
+            );
+        }
+
         // Create render graph
         m_render_graph = std::make_unique<RenderGraph>(*this);
 
@@ -841,6 +849,31 @@ namespace klingon {
         // Get backbuffer handle for final output
         auto backbuffer = m_render_graph->get_backbuffer_handle();
 
+        // Depth pre-pass (if enabled)
+        if (m_config.renderer.forward_plus.enable_depth_prepass) {
+            builder.add_graphics_pass(
+                        "depth_prepass",
+                        [this](const batleth::PassExecutionContext &ctx) {
+                            if (!m_active_scene) return;
+
+                            // Create frame info
+                            FrameInfo frame_info{
+                                static_cast<int>(ctx.frame_index),
+                                ctx.delta_time,
+                                ctx.command_buffer,
+                                m_active_scene->get_camera(),
+                                m_global_descriptor_sets[ctx.frame_index],
+                                m_active_scene->get_game_objects()
+                            };
+
+                            // Render depth only
+                            m_depth_prepass_system->render(frame_info);
+                        }
+                    )
+                    .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
+                    .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+        }
+
         // Main geometry/shading pass
         builder.add_graphics_pass(
                     "forward_shading",
@@ -872,9 +905,18 @@ namespace klingon {
                     }
                 )
                 .set_color_attachment(0, color_target, VK_ATTACHMENT_LOAD_OP_CLEAR, {{0.01f, 0.01f, 0.01f, 1.0f}})
-                .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
-                .write(color_target, batleth::ResourceUsage::ColorAttachment)
-                .write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
+                .set_depth_attachment(
+                    depth_buffer,
+                    m_config.renderer.forward_plus.enable_depth_prepass
+                        ? VK_ATTACHMENT_LOAD_OP_LOAD   // Keep existing depth from pre-pass
+                        : VK_ATTACHMENT_LOAD_OP_CLEAR,  // Clear if no pre-pass
+                    {1.0f, 0}
+                )
+                .write(color_target, batleth::ResourceUsage::ColorAttachment);
+
+        // Depth buffer is always written as an attachment (even if pipeline disables writes)
+        // The render graph needs to know about the depth attachment
+        builder.write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
 
         // Blit offscreen to backbuffer (if offscreen rendering is enabled)
         if (m_config.renderer.offscreen.enabled) {

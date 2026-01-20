@@ -223,8 +223,8 @@ namespace batleth {
         color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         color_blending.logicOpEnable = VK_FALSE;
         color_blending.logicOp = VK_LOGIC_OP_COPY;
-        color_blending.attachmentCount = 1;
-        color_blending.pAttachments = &color_blend_attachment;
+        color_blending.attachmentCount = (m_config.color_format != VK_FORMAT_UNDEFINED) ? 1 : 0;
+        color_blending.pAttachments = (m_config.color_format != VK_FORMAT_UNDEFINED) ? &color_blend_attachment : nullptr;
 
         // Dynamic state (viewport and scissor)
         std::vector<VkDynamicState> dynamic_states = {
@@ -249,16 +249,22 @@ namespace batleth {
         // Dynamic rendering info (Vulkan 1.3)
         VkPipelineRenderingCreateInfo rendering_info{};
         rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        rendering_info.colorAttachmentCount = 1;
-        rendering_info.pColorAttachmentFormats = &m_config.color_format;
-        rendering_info.depthAttachmentFormat = m_config.depth_format;
+
+        if (m_config.color_format != VK_FORMAT_UNDEFINED) {
+            rendering_info.colorAttachmentCount = 1;
+            rendering_info.pColorAttachmentFormats = &m_config.color_format;
+        }
+
+        if (m_config.depth_format != VK_FORMAT_UNDEFINED) {
+            rendering_info.depthAttachmentFormat = m_config.depth_format;
+        }
 
         // Create graphics pipeline
         VkGraphicsPipelineCreateInfo pipeline_info{};
         pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
-        // Use dynamic rendering if color format is provided, otherwise use legacy render pass
-        if (m_config.color_format != VK_FORMAT_UNDEFINED) {
+        // Use dynamic rendering if render pass is null, otherwise use legacy render pass
+        if (m_config.render_pass == VK_NULL_HANDLE) {
             pipeline_info.pNext = &rendering_info;
             pipeline_info.renderPass = VK_NULL_HANDLE;
         } else {

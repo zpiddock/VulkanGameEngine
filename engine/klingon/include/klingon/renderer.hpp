@@ -20,6 +20,7 @@
 #include "render_systems/point_light_system.hpp"
 #include "render_systems/simple_render_system.hpp"
 #include "render_systems/blit_render_system.hpp"
+#include "render_systems/depth_prepass_system.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -213,6 +214,7 @@ namespace klingon {
         std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
         std::unique_ptr<PointLightSystem> m_point_light_system;
         std::unique_ptr<BlitRenderSystem> m_blit_render_system;
+        std::unique_ptr<DepthPrepassSystem> m_depth_prepass_system;
         std::vector<std::unique_ptr<IRenderSystem> > m_custom_render_systems;
         bool m_debug_rendering_enabled = true;
 
