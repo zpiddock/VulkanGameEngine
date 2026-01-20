@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <cereal/cereal.hpp>
+#include <ser20/ser20.hpp>
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "klingon/config.hpp"
-#include <cereal/archives/json.hpp>
+#include <ser20/archives/json.hpp>
 
 /**
  * Game-specific configuration.
@@ -19,15 +19,15 @@ struct GameConfig {
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(difficulty),
-               CEREAL_NVP(master_volume),
-               CEREAL_NVP(enable_cheats),
-               CEREAL_NVP(show_fps));
+            ar(SER20_NVP(difficulty),
+               SER20_NVP(master_volume),
+               SER20_NVP(enable_cheats),
+               SER20_NVP(show_fps));
         }
     } gameplay;
 
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(CEREAL_NVP(engine), CEREAL_NVP(gameplay));
+        ar(SER20_NVP(engine), SER20_NVP(gameplay));
     }
 };

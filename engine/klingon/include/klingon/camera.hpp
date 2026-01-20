@@ -4,7 +4,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
-#include <cereal/cereal.hpp>
+#include <ser20/ser20.hpp>
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS

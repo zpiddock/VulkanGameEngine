@@ -67,7 +67,7 @@ auto main() -> int {
             if (::ImGui::BeginMainMenuBar()) {
                 if (::ImGui::BeginMenu("File")) {
                     if (::ImGui::MenuItem("Save Scene")) {
-                        engine.save_scene(engine.get_active_scene(), "editor_scene.json");
+                        // engine.save_scene(engine.get_active_scene(), "editor_scene.json");
                     }
                     if (::ImGui::MenuItem("Exit")) {
                         engine.shutdown();

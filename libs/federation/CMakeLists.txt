@@ -18,7 +18,7 @@ target_include_directories(federation
 target_compile_features(federation PUBLIC cxx_std_26)
 
 # Link Cereal for JSON serialization (header-only)
-target_link_libraries(federation PUBLIC cereal::cereal)
+target_link_libraries(federation PUBLIC ser20)
 
 # Set output name and versioning
 set_target_properties(federation PROPERTIES

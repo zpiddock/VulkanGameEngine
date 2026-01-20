@@ -128,11 +128,11 @@ FetchContent_Declare(
         GIT_SHALLOW TRUE
 )
 
-# Cereal - C++ serialization library
+# Ser20 - C++ serialization library
 FetchContent_Declare(
-    cereal
-    GIT_REPOSITORY https://github.com/USCiLab/cereal.git
-    GIT_TAG v1.3.2
+    ser20
+    GIT_REPOSITORY https://github.com/royjacobson/ser20
+    GIT_TAG v0.9.1
     GIT_SHALLOW TRUE
 )
 
@@ -141,7 +141,7 @@ set(JUST_INSTALL_CEREAL ON CACHE BOOL "" FORCE)
 set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "" FORCE)
 
 # Make dependencies available
-FetchContent_MakeAvailable(glfw glm vma imgui tinyobjloader assimp cereal)
+FetchContent_MakeAvailable(glfw glm vma imgui tinyobjloader assimp ser20)
 
 # Disable warnings for third-party libraries
 if(TARGET glfw)

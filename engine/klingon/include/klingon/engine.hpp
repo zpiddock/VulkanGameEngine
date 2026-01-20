@@ -1,9 +1,14 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <memory>
 #include <functional>
 #include <filesystem>
+
+#include "renderer.hpp"
+#include "scene.hpp"
+#include "borg/input.hpp"
+#include "borg/window.hpp"
+#include "federation/core.hpp"
 #include "klingon/config.hpp"
 
 #ifdef _WIN32
@@ -16,20 +21,7 @@
 #define KLINGON_API
 #endif
 
-namespace federation {
-    class Core;
-    class ConfigManager;
-}
-
-namespace borg {
-    class Window;
-    class Input;
-}
-
 namespace klingon {
-    class Renderer;
-    class RenderGraph;
-    class Scene;
 
     /**
  * Main engine class that orchestrates all subsystems.
@@ -147,7 +139,7 @@ namespace klingon {
         ImGuiCallback m_imgui_callback;
 
         // Scene management
-        Scene *m_active_scene = nullptr;
+        Scene* m_active_scene = nullptr;
 
         bool m_running = false;
         float m_last_frame_time = 0.0f;

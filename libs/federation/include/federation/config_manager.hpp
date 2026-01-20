@@ -4,11 +4,11 @@
 #include <optional>
 #include <string>
 #include <fstream>
-#include <cereal/archives/json.hpp>
-#include <cereal/types/vector.hpp>
-#include <cereal/types/string.hpp>
-#include <cereal/types/map.hpp>
-#include <cereal/types/optional.hpp>
+#include <ser20/archives/json.hpp>
+#include <ser20/types/vector.hpp>
+#include <ser20/types/string.hpp>
+#include <ser20/types/map.hpp>
+#include <ser20/types/optional.hpp>
 
 #ifdef _WIN32
     #ifdef FEDERATION_EXPORTS
@@ -53,7 +53,7 @@ public:
                 return config;
             }
 
-            cereal::JSONInputArchive archive(file);
+            ser20::JSONInputArchive archive(file);
             archive(config);
             log_info("Loaded config from: {}", filepath.string());
 
@@ -82,9 +82,9 @@ public:
                 return false;
             }
 
-            cereal::JSONOutputArchive archive(file,
-                cereal::JSONOutputArchive::Options::Default());
-            archive(cereal::make_nvp("config", config));
+            ser20::JSONOutputArchive archive(file,
+                ser20::JSONOutputArchive::Options::Default());
+            archive(ser20::make_nvp("config", config));
 
             log_info("Saved config to: {}", filepath.string());
             return true;
@@ -107,7 +107,7 @@ public:
         try {
             T config{};
             std::ifstream file(filepath);
-            cereal::JSONInputArchive archive(file);
+            ser20::JSONInputArchive archive(file);
             archive(config);
             return true;
         } catch (...) {

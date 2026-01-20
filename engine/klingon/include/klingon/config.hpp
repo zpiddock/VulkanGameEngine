@@ -4,9 +4,10 @@
 #include <vector>
 #include <cstdint>
 #include <vulkan/vulkan.h>
-#include <cereal/archives/json.hpp>
-#include <cereal/types/string.hpp>
-#include <cereal/types/vector.hpp>
+#include <ser20/ser20.hpp>
+#include <ser20/archives/json.hpp>
+#include <ser20/types/string.hpp>
+#include <ser20/types/vector.hpp>
 
 #ifdef _WIN32
     #ifdef KLINGON_EXPORTS
@@ -35,10 +36,10 @@ struct KLINGON_API KlingonConfig {
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(name),
-               CEREAL_NVP(version_major),
-               CEREAL_NVP(version_minor),
-               CEREAL_NVP(version_patch));
+            ar(SER20_NVP(name),
+               SER20_NVP(version_major),
+               SER20_NVP(version_minor),
+               SER20_NVP(version_patch));
         }
     } application;
 
@@ -52,11 +53,11 @@ struct KLINGON_API KlingonConfig {
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(width),
-               CEREAL_NVP(height),
-               CEREAL_NVP(resizable),
-               CEREAL_NVP(maximized),
-               CEREAL_NVP(fullscreen));
+            ar(SER20_NVP(width),
+               SER20_NVP(height),
+               SER20_NVP(resizable),
+               SER20_NVP(maximized),
+               SER20_NVP(fullscreen));
         }
     } window;
 
@@ -71,9 +72,9 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(enable_validation),
-                   CEREAL_NVP(instance_extensions),
-                   CEREAL_NVP(validation_layers));
+                ar(SER20_NVP(enable_validation),
+                   SER20_NVP(instance_extensions),
+                   SER20_NVP(validation_layers));
             }
         } instance;
 
@@ -88,8 +89,8 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(preferred_gpu_index),
-                   CEREAL_NVP(device_extensions));
+                ar(SER20_NVP(preferred_gpu_index),
+                   SER20_NVP(device_extensions));
             }
         } device;
 
@@ -101,9 +102,9 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(vsync),
-                   CEREAL_NVP(min_image_count),
-                   CEREAL_NVP(preferred_present_mode));
+                ar(SER20_NVP(vsync),
+                   SER20_NVP(min_image_count),
+                   SER20_NVP(preferred_present_mode));
             }
         } swapchain;
 
@@ -116,19 +117,19 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(cache_directory),
-                   CEREAL_NVP(enable_hot_reload),
-                   CEREAL_NVP(enable_validation),
-                   CEREAL_NVP(enable_optimization));
+                ar(SER20_NVP(cache_directory),
+                   SER20_NVP(enable_hot_reload),
+                   SER20_NVP(enable_validation),
+                   SER20_NVP(enable_optimization));
             }
         } shaders;
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(instance),
-               CEREAL_NVP(device),
-               CEREAL_NVP(swapchain),
-               CEREAL_NVP(shaders));
+            ar(SER20_NVP(instance),
+               SER20_NVP(device),
+               SER20_NVP(swapchain),
+               SER20_NVP(shaders));
         }
     } vulkan;
 
@@ -144,10 +145,10 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(enabled),
-                   CEREAL_NVP(tile_size),
-                   CEREAL_NVP(max_lights_per_tile),
-                   CEREAL_NVP(enable_depth_prepass));
+                ar(SER20_NVP(enabled),
+                   SER20_NVP(tile_size),
+                   SER20_NVP(max_lights_per_tile),
+                   SER20_NVP(enable_depth_prepass));
             }
         } forward_plus;
 
@@ -160,10 +161,10 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(enable_validation_layers),
-                   CEREAL_NVP(enable_imgui),
-                   CEREAL_NVP(enable_point_light_visualization),
-                   CEREAL_NVP(enable_wireframe));
+                ar(SER20_NVP(enable_validation_layers),
+                   SER20_NVP(enable_imgui),
+                   SER20_NVP(enable_point_light_visualization),
+                   SER20_NVP(enable_wireframe));
             }
         } debug;
 
@@ -173,7 +174,7 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(max_frames_in_flight));
+                ar(SER20_NVP(max_frames_in_flight));
             }
         } performance;
 
@@ -184,27 +185,27 @@ struct KLINGON_API KlingonConfig {
 
             template<class Archive>
             void serialize(Archive& ar) {
-                ar(CEREAL_NVP(enabled),
-                   CEREAL_NVP(color_format));
+                ar(SER20_NVP(enabled),
+                   SER20_NVP(color_format));
             }
         } offscreen;
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(forward_plus),
-               CEREAL_NVP(debug),
-               CEREAL_NVP(performance),
-               CEREAL_NVP(offscreen));
+            ar(SER20_NVP(forward_plus),
+               SER20_NVP(debug),
+               SER20_NVP(performance),
+               SER20_NVP(offscreen));
         }
     } renderer;
 
     // ========== Root Serialization ==========
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(CEREAL_NVP(application),
-           CEREAL_NVP(window),
-           CEREAL_NVP(vulkan),
-           CEREAL_NVP(renderer));
+        ar(SER20_NVP(application),
+           SER20_NVP(window),
+           SER20_NVP(vulkan),
+           SER20_NVP(renderer));
     }
 };
 

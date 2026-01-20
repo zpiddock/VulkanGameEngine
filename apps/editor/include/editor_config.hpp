@@ -1,8 +1,8 @@
 #pragma once
 
 #include "klingon/config.hpp"
-#include <cereal/archives/json.hpp>
-#include <cereal/types/vector.hpp>
+#include <ser20/archives/json.hpp>
+#include <ser20/types/vector.hpp>
 
 /**
  * Editor-specific configuration.
@@ -23,16 +23,16 @@ struct EditorConfig {
 
         template<class Archive>
         void serialize(Archive& ar) {
-            ar(CEREAL_NVP(enable_docking),
-               CEREAL_NVP(enable_viewports),
-               CEREAL_NVP(font_size),
-               CEREAL_NVP(theme),
-               CEREAL_NVP(recent_projects));
+            ar(SER20_NVP(enable_docking),
+               SER20_NVP(enable_viewports),
+               SER20_NVP(font_size),
+               SER20_NVP(theme),
+               SER20_NVP(recent_projects));
         }
     } ui;
 
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(CEREAL_NVP(engine), CEREAL_NVP(ui));
+        ar(SER20_NVP(engine), SER20_NVP(ui));
     }
 };
