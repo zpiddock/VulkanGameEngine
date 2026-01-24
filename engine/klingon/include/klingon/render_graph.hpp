@@ -133,6 +133,13 @@ namespace klingon {
      */
         [[nodiscard]] auto get_render_extent() const -> VkExtent2D;
 
+        /**
+     * Get an image view for a resource handle (if compiled).
+     * @param handle Resource handle
+     * @return Image view, or VK_NULL_HANDLE if not compiled or invalid handle
+     */
+        [[nodiscard]] auto get_image_view(batleth::ResourceHandle handle) const -> VkImageView;
+
     private:
         Renderer &m_renderer;
         std::unique_ptr<RenderGraphBuilder> m_builder;

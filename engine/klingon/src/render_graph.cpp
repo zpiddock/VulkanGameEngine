@@ -136,6 +136,13 @@ namespace klingon {
         return m_backbuffer.extent;
     }
 
+    auto RenderGraph::get_image_view(batleth::ResourceHandle handle) const -> VkImageView {
+        if (!m_compiled) {
+            return VK_NULL_HANDLE;
+        }
+        return m_compiled->get_image_view(handle);
+    }
+
     // ============================================================================
     // RenderGraphBuilder Implementation
     // ============================================================================

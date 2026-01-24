@@ -17,6 +17,7 @@
 #include "federation/log.hpp"
 
 #include <GLFW/glfw3.h>
+#include <imgui_impl_vulkan.h>
 #include <glm/gtc/constants.hpp>
 #include <array>
 #include <stdexcept>
@@ -1027,6 +1028,7 @@ namespace klingon {
             );
             offscreen_desc.is_transient = false;  // Cannot be transient with SAMPLED_BIT
             color_target = builder.create_image("offscreen_color", offscreen_desc);
+            m_offscreen_color_handle = color_target;  // Store for viewport access
 
             FED_DEBUG("Created offscreen color buffer: format={}",
                       m_config.renderer.offscreen.color_format.c_str());
@@ -1272,6 +1274,12 @@ namespace klingon {
         m_render_graph->compile();
         m_last_render_extent = extent;
 
+        // Update offscreen image view handle for viewport access
+        if (m_config.renderer.offscreen.enabled && m_offscreen_color_handle != batleth::INVALID_RESOURCE) {
+            m_offscreen_image_view = m_render_graph->get_image_view(m_offscreen_color_handle);
+            FED_DEBUG("Offscreen image view updated for viewport: {}", (void*)m_offscreen_image_view);
+        }
+
         FED_INFO("Forward+ render graph compiled with {} passes", m_render_graph->get_pass_count());
     }
 
@@ -1302,6 +1310,29 @@ namespace klingon {
 
     auto Renderer::set_imgui_callback(ImGuiCallback callback) -> void {
         m_imgui_callback = std::move(callback);
+    }
+
+    auto Renderer::create_imgui_viewport_texture() -> void* {
+        if (!m_config.renderer.offscreen.enabled) {
+            FED_WARN("Offscreen rendering is not enabled - cannot create viewport texture");
+            return nullptr;
+        }
+
+        if (m_offscreen_image_view == VK_NULL_HANDLE || m_offscreen_sampler == VK_NULL_HANDLE) {
+            FED_WARN("Offscreen image view or sampler not available");
+            return nullptr;
+        }
+
+        // Create ImGui descriptor set for the offscreen texture
+        // ImGui_ImplVulkan_AddTexture returns an ImTextureID (VkDescriptorSet)
+        VkDescriptorSet descriptor_set = ::ImGui_ImplVulkan_AddTexture(
+            m_offscreen_sampler,
+            m_offscreen_image_view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        );
+
+        FED_DEBUG("Created ImGui viewport texture descriptor set: {}", (void*)descriptor_set);
+        return descriptor_set;
     }
 
     auto Renderer::render_scene(Scene *scene, float delta_time) -> void {

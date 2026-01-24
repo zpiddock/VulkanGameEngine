@@ -128,6 +128,18 @@ namespace klingon {
 
         auto is_debug_rendering_enabled() const -> bool;
 
+        // Viewport access (for editor)
+        auto get_offscreen_image_view() const -> VkImageView { return m_offscreen_image_view; }
+        auto get_offscreen_sampler() const -> VkSampler { return m_offscreen_sampler; }
+        auto is_offscreen_enabled() const -> bool { return m_config.renderer.offscreen.enabled; }
+
+        /**
+         * Create an ImGui texture descriptor set for the offscreen render target.
+         * This allows displaying the rendered scene in an ImGui viewport.
+         * @return ImTextureID that can be used with ImGui::Image()
+         */
+        auto create_imgui_viewport_texture() -> void*;
+
     private:
         auto create_instance() -> void;
 
@@ -232,6 +244,8 @@ namespace klingon {
 
         // Offscreen rendering resources
         VkSampler m_offscreen_sampler = VK_NULL_HANDLE;
+        VkImageView m_offscreen_image_view = VK_NULL_HANDLE;
+        batleth::ResourceHandle m_offscreen_color_handle = batleth::INVALID_RESOURCE;
 
         // ImGui callback
         ImGuiCallback m_imgui_callback;
