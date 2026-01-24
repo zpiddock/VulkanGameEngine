@@ -225,14 +225,15 @@ auto main() -> int {
                     const auto& camera = scene.get_camera();
                     glm::mat4 camera_view = camera.get_view();
                     glm::mat4 camera_projection = camera.get_projection();
+                    camera_projection[1][1] *= -1.f; // Flip Y-axis for ImGuizmo
                     glm::mat4 object_matrix = obj->transform.mat4();
 
                     if (ImGuizmo::Manipulate(glm::value_ptr(camera_view), glm::value_ptr(camera_projection), current_gizmo_operation, current_gizmo_mode, glm::value_ptr(object_matrix))) {
-                        glm::vec3 translation, rotation, scale;
-                        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(object_matrix), glm::value_ptr(translation), glm::value_ptr(rotation), glm::value_ptr(scale));
+                        glm::vec3 translation, rotation_deg, scale;
+                        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(object_matrix), glm::value_ptr(translation), glm::value_ptr(rotation_deg), glm::value_ptr(scale));
 
                         obj->transform.translation = translation;
-                        obj->transform.rotation = glm::radians(rotation);
+                        obj->transform.rotation = glm::radians(rotation_deg);
                         obj->transform.scale = scale;
                     }
                 }
