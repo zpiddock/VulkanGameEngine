@@ -10,6 +10,7 @@ add_library(klingon SHARED
         src/movement_controller.cpp
         src/model/mesh.cpp
         src/game_object.cpp
+        src/picking/ray_picker.cpp
         src/render_systems/simple_render_system.cpp
         src/render_systems/point_light_system.cpp
         src/render_systems/blit_render_system.cpp

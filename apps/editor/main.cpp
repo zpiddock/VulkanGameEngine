@@ -1,12 +1,15 @@
 #include "klingon/engine.hpp"
 #include "klingon/scene.hpp"
 #include "klingon/movement_controller.hpp"
+#include "klingon/picking/ray_picker.hpp"
 #include "federation/log.hpp"
 #include "federation/config_manager.hpp"
 #include "editor_config.hpp"
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
+#include <ImGuizmo.h>
+#include <glm/gtc/type_ptr.hpp>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -17,50 +20,6 @@
 #include "klingon/renderer.hpp"
 
 void add_test_objects(klingon::Scene& scene, klingon::Engine& engine);
-
-// Simple ray-sphere intersection
-bool ray_sphere_intersect(
-    const glm::vec3& ray_origin,
-    const glm::vec3& ray_dir,
-    const glm::vec3& sphere_center,
-    float sphere_radius,
-    float& t
-) {
-    glm::vec3 oc = ray_origin - sphere_center;
-    float b = glm::dot(oc, ray_dir);
-    float c = glm::dot(oc, oc) - sphere_radius * sphere_radius;
-    float h = b * b - c;
-    if (h < 0.0f) return false; // No intersection
-    h = std::sqrt(h);
-    t = -b - h; // Closest intersection
-    if (t < 0.0f) t = -b + h; // If inside, try other intersection
-    return t >= 0.0f;
-}
-
-// Ray-AABB intersection
-bool ray_aabb_intersect(
-    const glm::vec3& ray_origin,
-    const glm::vec3& ray_dir,
-    const glm::vec3& aabb_min,
-    const glm::vec3& aabb_max,
-    float& t
-) {
-    glm::vec3 inv_dir = 1.0f / ray_dir;
-    glm::vec3 t1 = (aabb_min - ray_origin) * inv_dir;
-    glm::vec3 t2 = (aabb_max - ray_origin) * inv_dir;
-
-    glm::vec3 tmin = glm::min(t1, t2);
-    glm::vec3 tmax = glm::max(t1, t2);
-
-    float t_min = glm::max(tmin.x, glm::max(tmin.y, tmin.z));
-    float t_max = glm::min(tmax.x, glm::min(tmax.y, tmax.z));
-
-    if (t_max >= t_min && t_max >= 0.0f) {
-        t = t_min > 0.0f ? t_min : t_max;
-        return true;
-    }
-    return false;
-}
 
 auto main() -> int {
     federation::Logger::set_level(federation::LogLevel::Trace);
@@ -108,11 +67,15 @@ auto main() -> int {
         });
 
         std::optional<klingon::GameObject::id_t> selected_object_id;
+        static ImGuizmo::OPERATION current_gizmo_operation = ImGuizmo::TRANSLATE;
+        static ImGuizmo::MODE current_gizmo_mode = ImGuizmo::WORLD;
 
         // Set up ImGui callback (editor UI)
         engine.set_imgui_callback([&]() {
+            ImGuizmo::BeginFrame();
+
             // Handle object selection
-            if (!::ImGui::GetIO().WantCaptureMouse && ::ImGui::IsMouseClicked(0)) {
+            if (!ImGuizmo::IsUsing() && !::ImGui::GetIO().WantCaptureMouse && ::ImGui::IsMouseClicked(0)) {
                 auto mouse_pos = ::ImGui::GetMousePos();
                 auto viewport_pos = ::ImGui::GetMainViewport()->Pos;
                 auto viewport_size = ::ImGui::GetMainViewport()->Size;
@@ -123,48 +86,9 @@ auto main() -> int {
                         (mouse_pos.y - viewport_pos.y) / viewport_size.y
                     };
 
-                    auto ray_dir = scene.get_camera().get_ray_direction(uv);
-                    auto ray_origin = scene.get_camera().get_position();
-
-                    float min_dist = std::numeric_limits<float>::max();
-                    std::optional<klingon::GameObject::id_t> closest_obj;
-
-                    for (const auto& [id, obj] : scene.get_game_objects()) {
-                        float t = 0.0f;
-                        bool hit = false;
-
-                        if (obj.model) {
-                            // AABB intersection for models
-                            glm::mat4 model_matrix = obj.transform.mat4();
-                            glm::mat4 inv_model_matrix = glm::inverse(model_matrix);
-
-                            glm::vec3 local_ray_origin = glm::vec3(inv_model_matrix * glm::vec4(ray_origin, 1.0f));
-                            glm::vec3 local_ray_dir = glm::normalize(glm::vec3(inv_model_matrix * glm::vec4(ray_dir, 0.0f)));
-
-                            const auto& aabb = obj.model->get_aabb();
-                            if (ray_aabb_intersect(local_ray_origin, local_ray_dir, aabb.min, aabb.max, t)) {
-                                glm::vec3 local_hit_point = local_ray_origin + local_ray_dir * t;
-                                glm::vec3 world_hit_point = glm::vec3(model_matrix * glm::vec4(local_hit_point, 1.0f));
-                                float dist = glm::distance(ray_origin, world_hit_point);
-                                if (dist < min_dist) {
-                                    min_dist = dist;
-                                    closest_obj = id;
-                                }
-                            }
-                        } else if (obj.point_light) {
-                            // Sphere intersection for point lights
-                            float radius = 0.1f; // Visual radius of point light
-                            if (ray_sphere_intersect(ray_origin, ray_dir, obj.transform.translation, radius, t)) {
-                                if (t < min_dist) {
-                                    min_dist = t;
-                                    closest_obj = id;
-                                }
-                            }
-                        }
-                    }
-
-                    if (closest_obj) {
-                        selected_object_id = closest_obj;
+                    auto picked_id = klingon::RayPicker::pick_object(scene, uv);
+                    if (picked_id) {
+                        selected_object_id = picked_id;
                         FED_INFO("Selected object {}", *selected_object_id);
                     } else {
                         selected_object_id.reset();
@@ -269,18 +193,50 @@ auto main() -> int {
             ::ImGui::BulletText("Click - Select Object");
             ::ImGui::End();
 
-            // Renderer settings
-            ::ImGui::Begin("Renderer Settings");
-            bool debug_rendering = engine.is_debug_rendering_enabled();
-            if (::ImGui::Checkbox("Debug Rendering", &debug_rendering)) {
-                engine.set_debug_rendering_enabled(debug_rendering);
+            // Gizmo Toolbar
+            ::ImGui::Begin("Toolbar");
+            if (::ImGui::RadioButton("Translate", current_gizmo_operation == ImGuizmo::TRANSLATE))
+                current_gizmo_operation = ImGuizmo::TRANSLATE;
+            ::ImGui::SameLine();
+            if (::ImGui::RadioButton("Rotate", current_gizmo_operation == ImGuizmo::ROTATE))
+                current_gizmo_operation = ImGuizmo::ROTATE;
+            ::ImGui::SameLine();
+            if (::ImGui::RadioButton("Scale", current_gizmo_operation == ImGuizmo::SCALE))
+                current_gizmo_operation = ImGuizmo::SCALE;
+
+            if (current_gizmo_operation != ImGuizmo::SCALE) {
+                ::ImGui::SameLine();
+                if (::ImGui::RadioButton("World", current_gizmo_mode == ImGuizmo::WORLD))
+                    current_gizmo_mode = ImGuizmo::WORLD;
+                ::ImGui::SameLine();
+                if (::ImGui::RadioButton("Local", current_gizmo_mode == ImGuizmo::LOCAL))
+                    current_gizmo_mode = ImGuizmo::LOCAL;
             }
             ::ImGui::End();
 
-            // Console window
-            ::ImGui::Begin("Console");
-            ::ImGui::TextWrapped("Editor console output will appear here");
-            ::ImGui::End();
+            // ImGuizmo
+            if (selected_object_id) {
+                auto* obj = scene.get_game_object(*selected_object_id);
+                if (obj) {
+                    auto viewport = ::ImGui::GetMainViewport();
+                    ImGuizmo::SetRect(viewport->Pos.x, viewport->Pos.y, viewport->Size.x, viewport->Size.y);
+                    ImGuizmo::SetOrthographic(false);
+
+                    const auto& camera = scene.get_camera();
+                    glm::mat4 camera_view = camera.get_view();
+                    glm::mat4 camera_projection = camera.get_projection();
+                    glm::mat4 object_matrix = obj->transform.mat4();
+
+                    if (ImGuizmo::Manipulate(glm::value_ptr(camera_view), glm::value_ptr(camera_projection), current_gizmo_operation, current_gizmo_mode, glm::value_ptr(object_matrix))) {
+                        glm::vec3 translation, rotation, scale;
+                        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(object_matrix), glm::value_ptr(translation), glm::value_ptr(rotation), glm::value_ptr(scale));
+
+                        obj->transform.translation = translation;
+                        obj->transform.rotation = glm::radians(rotation);
+                        obj->transform.scale = scale;
+                    }
+                }
+            }
         });
 
         FED_INFO("Starting editor");
