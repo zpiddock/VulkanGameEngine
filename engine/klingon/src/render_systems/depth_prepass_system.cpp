@@ -63,7 +63,7 @@ namespace klingon {
         pipeline_config.push_constant_ranges = {push_constant_range};
         pipeline_config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         pipeline_config.polygon_mode = VK_POLYGON_MODE_FILL;
-        pipeline_config.cull_mode = VK_CULL_MODE_BACK_BIT;  // Enable back-face culling
+        pipeline_config.cull_mode = VK_CULL_MODE_NONE;  // Don't enable back-face culling, messes us up on billboard quads
         pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_config.enable_depth_test = true;
         pipeline_config.enable_depth_write = true;
