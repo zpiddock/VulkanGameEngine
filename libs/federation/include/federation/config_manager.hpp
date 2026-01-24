@@ -10,6 +10,8 @@
 #include <ser20/types/map.hpp>
 #include <ser20/types/optional.hpp>
 
+#include "log.hpp"
+
 #ifdef _WIN32
     #ifdef FEDERATION_EXPORTS
         #define FEDERATION_API __declspec(dllexport)
@@ -41,7 +43,7 @@ public:
         T config{};  // Default construct
 
         if (!std::filesystem::exists(filepath)) {
-            log_info("Config file not found: {}, creating with defaults", filepath.string());
+            FED_INFO("Config file not found: {}, creating with defaults", filepath.string());
             save(config, filepath);
             return config;
         }
@@ -49,17 +51,17 @@ public:
         try {
             std::ifstream file(filepath);
             if (!file.is_open()) {
-                log_error("Failed to open config file: {}", filepath.string());
+                FED_ERROR("Failed to open config file: {}", filepath.string());
                 return config;
             }
 
             ser20::JSONInputArchive archive(file);
             archive(config);
-            log_info("Loaded config from: {}", filepath.string());
+            FED_INFO("Loaded config from: {}", filepath.string());
 
         } catch (const std::exception& e) {
-            log_error("Failed to parse config file: {} - {}", filepath.string(), e.what());
-            log_info("Using default configuration");
+            FED_ERROR("Failed to parse config file: {} - {}", filepath.string(), e.what());
+            FED_INFO("Using default configuration");
         }
 
         return config;
@@ -78,7 +80,7 @@ public:
 
             std::ofstream file(filepath);
             if (!file.is_open()) {
-                log_error("Failed to create config file: {}", filepath.string());
+                FED_ERROR("Failed to create config file: {}", filepath.string());
                 return false;
             }
 
@@ -86,11 +88,11 @@ public:
                 ser20::JSONOutputArchive::Options::Default());
             archive(ser20::make_nvp("config", config));
 
-            log_info("Saved config to: {}", filepath.string());
+            FED_INFO("Saved config to: {}", filepath.string());
             return true;
 
         } catch (const std::exception& e) {
-            log_error("Failed to save config file: {} - {}", filepath.string(), e.what());
+            FED_ERROR("Failed to save config file: {} - {}", filepath.string(), e.what());
             return false;
         }
     }
@@ -116,24 +118,6 @@ public:
     }
 
 private:
-    // Inline logging helpers (will use federation::log)
-    template<typename... Args>
-    static auto log_info(const char* fmt, Args&&... args) -> void {
-        // Implemented in config_manager.cpp
-        log_info_impl(fmt, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    static auto log_error(const char* fmt, Args&&... args) -> void {
-        // Implemented in config_manager.cpp
-        log_error_impl(fmt, std::forward<Args>(args)...);
-    }
-
-    // Implementation functions (defined in .cpp)
-    FEDERATION_API static auto log_info_impl(const char* msg) -> void;
-    FEDERATION_API static auto log_info_impl(const char* fmt, const std::string& arg) -> void;
-    FEDERATION_API static auto log_error_impl(const char* fmt, const std::string& arg) -> void;
-    FEDERATION_API static auto log_error_impl(const char* fmt, const std::string& arg1, const char* arg2) -> void;
 };
 
 } // namespace federation
