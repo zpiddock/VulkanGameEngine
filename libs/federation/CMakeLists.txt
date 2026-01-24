@@ -4,7 +4,6 @@
 add_library(federation SHARED
         src/core.cpp
         src/log.cpp
-        src/config_manager.cpp
 )
 
 target_include_directories(federation

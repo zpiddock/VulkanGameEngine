@@ -1,7 +1,7 @@
 # Editor Application
 # Development editor with ImGui interface and hot-reload support
 
-add_executable(editor main.cpp)
+add_executable(editor main.cpp editor_ui.cpp)
 
 target_include_directories(editor
         PRIVATE
