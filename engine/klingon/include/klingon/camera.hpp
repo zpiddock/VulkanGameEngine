@@ -99,18 +99,27 @@ namespace klingon {
         ) -> void;
 
         [[nodiscard]] auto get_projection() const -> const glm::mat4 & { return m_projection; }
+        [[nodiscard]] auto get_inverse_projection() const -> const glm::mat4 & { return m_inverse_projection; }
         [[nodiscard]] auto get_view() const -> const glm::mat4 & { return m_view; }
         [[nodiscard]] auto get_view_projection() const -> glm::mat4 { return m_projection * m_view; }
         [[nodiscard]] auto get_inverse_view() const -> const glm::mat4 & { return m_inverse_view; }
         [[nodiscard]] auto get_position() const -> glm::vec3 { return glm::vec3{m_inverse_view[3]}; }
 
+        /**
+         * Get ray direction from screen coordinates (UV 0..1)
+         * @param uv Normalized screen coordinates (0,0 top-left, 1,1 bottom-right)
+         * @return Normalized direction vector in world space
+         */
+        [[nodiscard]] auto get_ray_direction(const glm::vec2& uv) const -> glm::vec3;
+
         template <class Archive>
         void serialize(Archive& ar) {
-            ar(m_projection, m_view, m_inverse_view);
+            ar(m_projection, m_view, m_inverse_view, m_inverse_projection);
         }
 
     private:
         glm::mat4 m_projection{1.f};
+        glm::mat4 m_inverse_projection{1.f};
         glm::mat4 m_view{1.f};
         glm::mat4 m_inverse_view{1.f};
     };

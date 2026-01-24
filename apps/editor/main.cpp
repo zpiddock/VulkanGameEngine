@@ -10,11 +10,57 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <optional>
+#include <limits>
 
 #include "borg/window.hpp"
 #include "klingon/renderer.hpp"
 
 void add_test_objects(klingon::Scene& scene, klingon::Engine& engine);
+
+// Simple ray-sphere intersection
+bool ray_sphere_intersect(
+    const glm::vec3& ray_origin,
+    const glm::vec3& ray_dir,
+    const glm::vec3& sphere_center,
+    float sphere_radius,
+    float& t
+) {
+    glm::vec3 oc = ray_origin - sphere_center;
+    float b = glm::dot(oc, ray_dir);
+    float c = glm::dot(oc, oc) - sphere_radius * sphere_radius;
+    float h = b * b - c;
+    if (h < 0.0f) return false; // No intersection
+    h = std::sqrt(h);
+    t = -b - h; // Closest intersection
+    if (t < 0.0f) t = -b + h; // If inside, try other intersection
+    return t >= 0.0f;
+}
+
+// Ray-AABB intersection
+bool ray_aabb_intersect(
+    const glm::vec3& ray_origin,
+    const glm::vec3& ray_dir,
+    const glm::vec3& aabb_min,
+    const glm::vec3& aabb_max,
+    float& t
+) {
+    glm::vec3 inv_dir = 1.0f / ray_dir;
+    glm::vec3 t1 = (aabb_min - ray_origin) * inv_dir;
+    glm::vec3 t2 = (aabb_max - ray_origin) * inv_dir;
+
+    glm::vec3 tmin = glm::min(t1, t2);
+    glm::vec3 tmax = glm::max(t1, t2);
+
+    float t_min = glm::max(tmin.x, glm::max(tmin.y, tmin.z));
+    float t_max = glm::min(tmax.x, glm::min(tmax.y, tmax.z));
+
+    if (t_max >= t_min && t_max >= 0.0f) {
+        t = t_min > 0.0f ? t_min : t_max;
+        return true;
+    }
+    return false;
+}
 
 auto main() -> int {
     federation::Logger::set_level(federation::LogLevel::Trace);
@@ -61,8 +107,71 @@ auto main() -> int {
             scene_camera_controller.update(window, delta_time, scene.get_camera_transform());
         });
 
+        std::optional<klingon::GameObject::id_t> selected_object_id;
+
         // Set up ImGui callback (editor UI)
         engine.set_imgui_callback([&]() {
+            // Handle object selection
+            if (!::ImGui::GetIO().WantCaptureMouse && ::ImGui::IsMouseClicked(0)) {
+                auto mouse_pos = ::ImGui::GetMousePos();
+                auto viewport_pos = ::ImGui::GetMainViewport()->Pos;
+                auto viewport_size = ::ImGui::GetMainViewport()->Size;
+
+                if (viewport_size.x > 0 && viewport_size.y > 0) {
+                    glm::vec2 uv = {
+                        (mouse_pos.x - viewport_pos.x) / viewport_size.x,
+                        (mouse_pos.y - viewport_pos.y) / viewport_size.y
+                    };
+
+                    auto ray_dir = scene.get_camera().get_ray_direction(uv);
+                    auto ray_origin = scene.get_camera().get_position();
+
+                    float min_dist = std::numeric_limits<float>::max();
+                    std::optional<klingon::GameObject::id_t> closest_obj;
+
+                    for (const auto& [id, obj] : scene.get_game_objects()) {
+                        float t = 0.0f;
+                        bool hit = false;
+
+                        if (obj.model) {
+                            // AABB intersection for models
+                            glm::mat4 model_matrix = obj.transform.mat4();
+                            glm::mat4 inv_model_matrix = glm::inverse(model_matrix);
+
+                            glm::vec3 local_ray_origin = glm::vec3(inv_model_matrix * glm::vec4(ray_origin, 1.0f));
+                            glm::vec3 local_ray_dir = glm::normalize(glm::vec3(inv_model_matrix * glm::vec4(ray_dir, 0.0f)));
+
+                            const auto& aabb = obj.model->get_aabb();
+                            if (ray_aabb_intersect(local_ray_origin, local_ray_dir, aabb.min, aabb.max, t)) {
+                                glm::vec3 local_hit_point = local_ray_origin + local_ray_dir * t;
+                                glm::vec3 world_hit_point = glm::vec3(model_matrix * glm::vec4(local_hit_point, 1.0f));
+                                float dist = glm::distance(ray_origin, world_hit_point);
+                                if (dist < min_dist) {
+                                    min_dist = dist;
+                                    closest_obj = id;
+                                }
+                            }
+                        } else if (obj.point_light) {
+                            // Sphere intersection for point lights
+                            float radius = 0.1f; // Visual radius of point light
+                            if (ray_sphere_intersect(ray_origin, ray_dir, obj.transform.translation, radius, t)) {
+                                if (t < min_dist) {
+                                    min_dist = t;
+                                    closest_obj = id;
+                                }
+                            }
+                        }
+                    }
+
+                    if (closest_obj) {
+                        selected_object_id = closest_obj;
+                        FED_INFO("Selected object {}", *selected_object_id);
+                    } else {
+                        selected_object_id.reset();
+                    }
+                }
+            }
+
             // Main menu bar
             if (::ImGui::BeginMainMenuBar()) {
                 if (::ImGui::BeginMenu("File")) {
@@ -89,7 +198,15 @@ auto main() -> int {
             if (::ImGui::TreeNode("Game Objects")) {
                 ::ImGui::Text("Count: %zu", scene.get_game_objects().size());
                 for (const auto &[id, obj]: scene.get_game_objects()) {
-                    ::ImGui::BulletText("Object %u", id);
+                    int flags = ::ImGuiTreeNodeFlags_Leaf | ::ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    if (selected_object_id && *selected_object_id == id) {
+                        flags |= ::ImGuiTreeNodeFlags_Selected;
+                    }
+
+                    ::ImGui::TreeNodeEx((void*)(intptr_t)id, flags, "Object %u", id);
+                    if (::ImGui::IsItemClicked()) {
+                        selected_object_id = id;
+                    }
                 }
                 ::ImGui::TreePop();
             }
@@ -97,7 +214,35 @@ auto main() -> int {
 
             // Properties window
             ::ImGui::Begin("Properties");
-            ::ImGui::Text("Select an object to edit properties");
+            if (selected_object_id) {
+                auto* obj = scene.get_game_object(*selected_object_id);
+                if (obj) {
+                    ::ImGui::Text("Object ID: %u", *selected_object_id);
+                    ::ImGui::Separator();
+
+                    ::ImGui::DragFloat3("Position", &obj->transform.translation.x, 0.1f);
+
+                    glm::vec3 rotation_deg = glm::degrees(obj->transform.rotation);
+                    if (::ImGui::DragFloat3("Rotation", &rotation_deg.x, 1.0f)) {
+                        obj->transform.rotation = glm::radians(rotation_deg);
+                    }
+
+                    ::ImGui::DragFloat3("Scale", &obj->transform.scale.x, 0.1f);
+
+                    ::ImGui::ColorEdit3("Color", &obj->color.x);
+
+                    if (obj->point_light) {
+                        ::ImGui::Separator();
+                        ::ImGui::Text("Point Light");
+                        ::ImGui::DragFloat("Intensity", &obj->point_light->light_intensity, 0.1f, 0.0f, 100.0f);
+                    }
+                } else {
+                    selected_object_id.reset();
+                    ::ImGui::Text("Selected object not found (deleted?)");
+                }
+            } else {
+                ::ImGui::Text("Select an object to edit properties");
+            }
             ::ImGui::End();
 
             // Viewport stats
@@ -121,6 +266,7 @@ auto main() -> int {
             ::ImGui::BulletText("F1 - Toggle Camera Mode");
             ::ImGui::BulletText("WASD - Move Camera (Scene mode)");
             ::ImGui::BulletText("Mouse - Rotate Camera (Scene mode)");
+            ::ImGui::BulletText("Click - Select Object");
             ::ImGui::End();
 
             // Renderer settings

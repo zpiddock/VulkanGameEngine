@@ -146,6 +146,19 @@ namespace klingon {
         : m_device(device) {
         create_vertex_buffer(mesh_data.vertices);
         create_index_buffer(mesh_data.indices);
+
+        // Calculate AABB
+        if (mesh_data.vertices.empty()) {
+            return;
+        }
+
+        m_aabb.min = mesh_data.vertices[0].position;
+        m_aabb.max = mesh_data.vertices[0].position;
+
+        for (const auto& vertex : mesh_data.vertices) {
+            m_aabb.min = glm::min(m_aabb.min, vertex.position);
+            m_aabb.max = glm::max(m_aabb.max, vertex.position);
+        }
     }
 
     Mesh::~Mesh() {

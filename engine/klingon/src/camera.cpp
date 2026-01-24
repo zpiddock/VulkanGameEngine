@@ -15,6 +15,8 @@ namespace klingon {
         m_projection[3][0] = -(right + left) / (right - left);
         m_projection[3][1] = -(bottom + top) / (bottom - top);
         m_projection[3][2] = -near / (far - near);
+
+        m_inverse_projection = glm::inverse(m_projection);
     }
 
     auto Camera::set_perspective_projection(
@@ -31,6 +33,8 @@ namespace klingon {
         m_projection[2][2] = far / (far - near);
         m_projection[2][3] = 1.f;
         m_projection[3][2] = -(far * near) / (far - near);
+
+        m_inverse_projection = glm::inverse(m_projection);
     }
 
     auto Camera::set_view_direction(
@@ -119,5 +123,38 @@ namespace klingon {
         m_inverse_view[3][0] = position.x;
         m_inverse_view[3][1] = position.y;
         m_inverse_view[3][2] = position.z;
+    }
+
+    auto Camera::get_ray_direction(const glm::vec2& uv) const -> glm::vec3 {
+        // Convert UV (0..1) to NDC (-1..1)
+        // Note: Vulkan Y is down, but NDC Y is usually up in math, but here we want to match Vulkan clip space
+        // Vulkan clip space: x: -1 (left) to 1 (right), y: -1 (top) to 1 (bottom), z: 0 (near) to 1 (far)
+
+        // UV (0,0) is top-left.
+        // NDC x = uv.x * 2 - 1
+        // NDC y = uv.y * 2 - 1
+
+        const glm::vec4 ndc{uv.x * 2.0f - 1.0f, uv.y * 2.0f - 1.0f, 1.0f, 1.0f};
+
+        // Transform to view space
+        const glm::vec4 view_target = m_inverse_projection * ndc;
+
+        // Perspective division not strictly needed for direction vector if w is 1, but good for correctness
+        // For direction, we want the vector from camera (0,0,0 in view space) to this point.
+        // In view space, camera is at origin.
+        // However, we want world space direction.
+
+        // Transform to world space
+        // Direction is (WorldTarget - WorldCameraPos)
+        // WorldCameraPos is m_inverse_view[3]
+
+        // Alternative: Transform vector (view_target.xyz / view_target.w) by inverse view rotation
+
+        const glm::vec3 view_dir = glm::vec3(view_target) / view_target.w;
+
+        // Transform direction to world space (using only rotation part of inverse view)
+        const glm::vec3 world_dir = glm::vec3(m_inverse_view * glm::vec4(view_dir, 0.0f));
+
+        return glm::normalize(world_dir);
     }
 } // namespace klingon

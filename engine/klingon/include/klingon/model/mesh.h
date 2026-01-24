@@ -27,6 +27,14 @@ namespace batleth {
 
 namespace klingon {
     /**
+     * Axis Aligned Bounding Box
+     */
+    struct AABB {
+        glm::vec3 min{0.f};
+        glm::vec3 max{0.f};
+    };
+
+    /**
      * Vertex structure for mesh data
      */
     struct Vertex {
@@ -97,6 +105,8 @@ namespace klingon {
         static auto create_from_file(batleth::Device &device, const std::string &filepath)
             -> std::unique_ptr<Mesh>;
 
+        [[nodiscard]] auto get_aabb() const -> const AABB & { return m_aabb; }
+
     private:
         auto create_vertex_buffer(const std::vector<Vertex> &vertices) -> void;
 
@@ -112,5 +122,7 @@ namespace klingon {
         VkBuffer m_index_buffer = VK_NULL_HANDLE;
         VkDeviceMemory m_index_buffer_memory = VK_NULL_HANDLE;
         uint32_t m_index_count = 0;
+
+        AABB m_aabb{};
     };
 } // namespace klingon

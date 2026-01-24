@@ -93,6 +93,13 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# ImGuizmo - 3D gizmo for ImGui
+FetchContent_Declare(
+    imguizmo
+    GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+    GIT_SHALLOW TRUE
+)
+
 # VulkanMemoryAllocator
 FetchContent_Declare(
     vma
@@ -136,12 +143,8 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-# Cereal is header-only, no need for special configuration
-set(JUST_INSTALL_CEREAL ON CACHE BOOL "" FORCE)
-set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "" FORCE)
-
 # Make dependencies available
-FetchContent_MakeAvailable(glfw glm vma imgui tinyobjloader assimp ser20)
+FetchContent_MakeAvailable(glfw glm vma imgui imguizmo tinyobjloader assimp ser20)
 
 # Disable warnings for third-party libraries
 if(TARGET glfw)
@@ -163,11 +166,13 @@ add_library(imgui SHARED
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
 )
 
 target_include_directories(imgui PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
+    ${imguizmo_SOURCE_DIR}
 )
 
 target_link_libraries(imgui PUBLIC
