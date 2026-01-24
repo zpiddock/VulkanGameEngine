@@ -39,6 +39,7 @@ void main() {
 
     float cosDis = 0.5 * (cos(distanceFromOffset * M_PI) + 1.0);
 
-    // Multiply color by alpha for proper fade-out at edges
-    outColour = vec4(push.colour.xyz * cosDis, cosDis);
+    // Premultiplied alpha: multiply color by falloff, blend mode will just add (no alpha multiplication)
+    // This creates a smooth bloom-like glow with no dark edges
+    outColour = vec4(push.colour.xyz * cosDis, 1.0);
 }

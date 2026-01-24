@@ -63,11 +63,11 @@ namespace klingon {
         pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_config.enable_depth_test = true;
         pipeline_config.enable_depth_write = false; // Don't write to depth buffer for lights
-        pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;  // Changed for depth pre-pass compatibility
+        pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS;  // Strict less-than prevents lights bleeding through geometry
 
-        // Additive blending for lights (accumulate light contributions)
+        // Premultiplied alpha additive blending (color already attenuated in shader)
         pipeline_config.enable_blending = true;
-        pipeline_config.src_color_blend_factor = VK_BLEND_FACTOR_SRC_ALPHA;
+        pipeline_config.src_color_blend_factor = VK_BLEND_FACTOR_ONE;  // Premultiplied: just add the result
         pipeline_config.dst_color_blend_factor = VK_BLEND_FACTOR_ONE;  // Additive blending
         pipeline_config.color_blend_op = VK_BLEND_OP_ADD;
         pipeline_config.src_alpha_blend_factor = VK_BLEND_FACTOR_ONE;
