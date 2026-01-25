@@ -19,6 +19,7 @@ add_library(klingon SHARED
         src/scene.cpp
         src/model/asset_loader.cpp
         src/model_data.cpp
+        src/texture_manager.cpp
 )
 
 target_include_directories(klingon

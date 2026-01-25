@@ -4,8 +4,6 @@
 
 
 #define GLM_ENABLE_EXPERIMENTAL
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 #include "klingon/model/asset_loader.hpp"
 
 #include <glm/gtx/hash.hpp>
