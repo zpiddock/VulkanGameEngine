@@ -18,7 +18,7 @@
 namespace std {
     template<>
     struct hash<klingon::Vertex> {
-        size_t operator()(const klingon::Vertex &vertex) const {
+        size_t operator()(const klingon::Vertex &vertex) const noexcept {
             size_t h1 = hash<glm::vec3>()(vertex.position);
             size_t h2 = hash<glm::vec3>()(vertex.color);
             size_t h3 = hash<glm::vec3>()(vertex.normal);
