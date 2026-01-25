@@ -17,6 +17,9 @@ add_library(batleth SHARED
         src/barrier_batcher.cpp
         src/transient_allocator.cpp
         src/render_graph_pass.cpp
+        src/image.cpp
+        src/sampler.cpp
+        src/image_utils.cpp
 )
 
 target_include_directories(batleth
