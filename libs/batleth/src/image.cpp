@@ -34,7 +34,7 @@ Image::Image(const Config& config)
     alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
     alloc_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
-    if (vmaCreateImage(m_allocator, &image_info, &alloc_info, &m_image, &m_allocation, nullptr) != VK_SUCCESS) {
+    if (::vmaCreateImage(m_allocator, &image_info, &alloc_info, &m_image, &m_allocation, nullptr) != VK_SUCCESS) {
         FED_FATAL("Failed to create VkImage with VMA");
         throw std::runtime_error("Failed to create VkImage");
     }
@@ -56,7 +56,7 @@ Image::Image(const Config& config)
 
         if (::vkCreateImageView(m_device, &view_info, nullptr, &m_view) != VK_SUCCESS) {
             // Clean up image before throwing
-            vmaDestroyImage(m_allocator, m_image, m_allocation);
+            ::vmaDestroyImage(m_allocator, m_image, m_allocation);
             FED_FATAL("Failed to create VkImageView");
             throw std::runtime_error("Failed to create VkImageView");
         }
@@ -72,7 +72,7 @@ Image::~Image() {
     }
 
     if (m_image != VK_NULL_HANDLE && m_allocator != nullptr) {
-        vmaDestroyImage(m_allocator, m_image, m_allocation);
+        ::vmaDestroyImage(m_allocator, m_image, m_allocation);
         FED_TRACE("Destroyed VkImage");
     }
 }
@@ -105,7 +105,7 @@ auto Image::operator=(Image&& other) noexcept -> Image& {
             ::vkDestroyImageView(m_device, m_view, nullptr);
         }
         if (m_image != VK_NULL_HANDLE && m_allocator != nullptr) {
-            vmaDestroyImage(m_allocator, m_image, m_allocation);
+            ::vmaDestroyImage(m_allocator, m_image, m_allocation);
         }
 
         // Move resources

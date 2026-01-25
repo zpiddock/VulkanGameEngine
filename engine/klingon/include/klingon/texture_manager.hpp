@@ -30,7 +30,7 @@ namespace klingon {
     public:
         struct Config {
             batleth::Device& device;
-            VmaAllocator allocator;
+            VmaAllocator allocator{};
             uint32_t max_textures = 4096;
             uint32_t max_materials = 1024;
         };
@@ -125,5 +125,6 @@ namespace klingon {
 
         uint32_t m_max_textures;
         bool m_descriptors_dirty = true;
+        std::string m_textures_dir = "assets/textures";
     };
 } // namespace klingon

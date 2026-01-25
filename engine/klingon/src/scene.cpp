@@ -84,4 +84,29 @@ namespace klingon {
     auto Scene::get_name() const -> const std::string & {
         return m_name;
     }
+
+    auto Scene::reload_all_resources(AssetLoader& asset_loader) -> void {
+        FED_INFO("Reloading resources for scene '{}'", m_name);
+
+        uint32_t loaded_count = 0;
+        uint32_t failed_count = 0;
+
+        for (auto& [id, obj] : m_game_objects) {
+            if (!obj.model_filepath.empty()) {
+                FED_TRACE("Loading model '{}' for game object {}", obj.model_filepath, id);
+
+                auto model_data = asset_loader.load_model(obj.model_filepath);
+                if (model_data) {
+                    obj.model_data = model_data;
+                    loaded_count++;
+                } else {
+                    FED_ERROR("Failed to load model '{}' for game object {}", obj.model_filepath, id);
+                    failed_count++;
+                }
+            }
+        }
+
+        FED_INFO("Resource reload complete for scene '{}': {} loaded, {} failed",
+                 m_name, loaded_count, failed_count);
+    }
 } // namespace klingon

@@ -157,7 +157,45 @@ auto TextureManager::create_material_buffer() -> void {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
 
-    FED_TRACE("Material buffer created");
+    // Create and upload default material at index 0
+    MaterialGPU default_material{};
+    default_material.base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    default_material.metallic_factor = 0.0f;
+    default_material.roughness_factor = 0.5f;
+    default_material.normal_scale = 1.0f;
+    default_material.albedo_texture_index = 0;  // Default white texture
+    default_material.normal_texture_index = 1;  // Default flat normal
+    default_material.pbr_texture_index = 2;     // Default PBR
+    default_material.material_flags = 0;        // No textures (use factors only)
+
+    m_material_data.push_back(default_material);
+    m_material_count = 1;
+
+    // Upload default material to GPU
+    batleth::Buffer staging_buffer(
+        m_device,
+        sizeof(MaterialGPU),
+        1,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    staging_buffer.map();
+    staging_buffer.write_to_buffer(&default_material);
+    staging_buffer.unmap();
+
+    VkCommandBuffer cmd = m_device.begin_single_time_commands();
+
+    VkBufferCopy copy_region{};
+    copy_region.srcOffset = 0;
+    copy_region.dstOffset = 0;
+    copy_region.size = sizeof(MaterialGPU);
+
+    ::vkCmdCopyBuffer(cmd, staging_buffer.get_buffer(), m_material_buffer->get_buffer(), 1, &copy_region);
+
+    m_device.end_single_time_commands(cmd);
+
+    FED_TRACE("Material buffer created with default material at index 0");
 }
 
 auto TextureManager::create_descriptor_set_layout() -> void {
@@ -320,6 +358,9 @@ auto TextureManager::load_texture(
     batleth::TextureType type,
     bool generate_mipmaps
 ) -> uint32_t {
+
+    std::filesystem::path path(m_textures_dir + "/" + filepath);
+
     // Check cache first
     std::unordered_map<std::string, uint32_t>* cache = nullptr;
     switch (type) {
@@ -344,22 +385,21 @@ auto TextureManager::load_texture(
     }
 
     // Detect format by extension
-    std::filesystem::path path(filepath);
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
     uint32_t index = 0;
 
     if (ext == ".ktx2" || ext == ".ktx") {
-        index = load_ktx2(filepath, type);
+        index = load_ktx2(path.generic_string(), type);
     } else if (ext == ".dds") {
-        index = load_dds(filepath, type);
+        index = load_dds(path.generic_string(), type);
     } else {
-        index = load_stb_image(filepath, type, generate_mipmaps);
+        index = load_stb_image(path.generic_string(), type, generate_mipmaps);
     }
 
     // Cache the result
-    (*cache)[filepath] = index;
+    (*cache)[path.generic_string()] = index;
 
     return index;
 }
@@ -419,8 +459,8 @@ auto TextureManager::load_stb_image(const std::string& filepath,
     // Copy to GPU
     VkCommandBuffer cmd = m_device.begin_single_time_commands();
 
-    // Transition to TRANSFER_DST
-    image->transition_layout(cmd, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, 1);
+    // Transition ALL mip levels to TRANSFER_DST (required for mipmap generation)
+    image->transition_layout(cmd, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, mip_levels);
 
     // Copy buffer to image (mip 0)
     VkBufferImageCopy region{};

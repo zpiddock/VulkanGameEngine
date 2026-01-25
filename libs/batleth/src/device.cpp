@@ -30,14 +30,29 @@ namespace batleth {
             queue_create_infos.push_back(queue_create_info);
         }
 
+        // enable sampler anisotropy
+        VkPhysicalDeviceFeatures vulkan10_features{};
+        vulkan10_features.samplerAnisotropy = VK_TRUE;
+
+        // Enable Vulkan 1.2 descriptor indexing features (for bindless textures)
+        VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features{};
+        descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        descriptor_indexing_features.descriptorBindingPartiallyBound = VK_TRUE;
+        descriptor_indexing_features.runtimeDescriptorArray = VK_TRUE;
+        descriptor_indexing_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        descriptor_indexing_features.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+
         // Enable Vulkan 1.3 features (includes dynamic rendering)
         VkPhysicalDeviceVulkan13Features vulkan13_features{};
         vulkan13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         vulkan13_features.dynamicRendering = VK_TRUE;
         vulkan13_features.synchronization2 = VK_TRUE;
+        vulkan13_features.pNext = &descriptor_indexing_features;  // Chain descriptor indexing
 
         VkPhysicalDeviceFeatures2 device_features{};
         device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        device_features.features = vulkan10_features;
         device_features.pNext = &vulkan13_features;
 
         VkDeviceCreateInfo create_info{};
@@ -51,6 +66,17 @@ namespace batleth {
 
         if (::vkCreateDevice(m_physical_device, &create_info, nullptr, &m_device) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create logical device");
+        }
+
+        // List all available Vulkan extensions
+        std::uint32_t extension_count = 0;
+        ::vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &extension_count, nullptr);
+        std::vector<VkExtensionProperties> available_extensions(extension_count);
+        ::vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &extension_count, available_extensions.data());
+
+        FED_INFO("Available Vulkan Device extensions ({}):", extension_count);
+        for (const auto &extension: available_extensions) {
+            FED_DEBUG(" - {} (version {})", extension.extensionName, extension.specVersion);
         }
 
         ::vkGetDeviceQueue(m_device, m_indices.graphics_family.value(), 0, &m_graphics_queue);

@@ -4,6 +4,7 @@
 #include "klingon/render_graph.hpp"
 #include "klingon/frame_info.hpp"
 #include "klingon/forward_plus.hpp"
+#include "klingon/texture_manager.hpp"
 #include "klingon/render_systems/simple_render_system.hpp"
 #include "klingon/render_systems/point_light_system.hpp"
 #include "borg/window.hpp"
@@ -23,6 +24,9 @@
 #include <stdexcept>
 #include <vector>
 
+#include <vk_mem_alloc.h>
+#include "vma/vk_mem_alloc.h"
+
 namespace klingon {
     Renderer::Renderer(const KlingonConfig &config, borg::Window &window)
         : m_window(window), m_config(config) {
@@ -30,6 +34,17 @@ namespace klingon {
 
         create_instance();
         create_device();
+
+        // Create TextureManager early (needed for asset loading)
+        FED_INFO("Creating TextureManager");
+        TextureManager::Config tex_config{
+        .device = *m_device,
+        .allocator = get_allocator(),  // Use getter to ensure allocator is initialized
+        .max_textures = 4096,
+        .max_materials = 1024,
+        };
+        m_texture_manager = std::make_unique<TextureManager>(tex_config);
+
         create_swapchain();
         create_depth_resources();
         create_command_pool();
@@ -404,7 +419,7 @@ namespace klingon {
 
         FED_INFO("Available Vulkan extensions ({}):", extension_count);
         for (const auto &extension: available_extensions) {
-            FED_DEBUG(" - {} (version {})", extension.extensionName, extension.specVersion);
+            FED_TRACE(" - {} (version {})", extension.extensionName, extension.specVersion);
         }
 
         // Get required GLFW extensions
@@ -458,7 +473,9 @@ namespace klingon {
         batleth::Device::Config device_config{};
         device_config.instance = m_instance->get_handle();
         device_config.surface = m_surface->get_handle();
-        device_config.device_extensions = {"VK_KHR_swapchain"};
+        for (auto& extension : m_config.vulkan.device.device_extensions) {
+            device_config.device_extensions.push_back(extension.c_str());
+        }
 
         m_device = std::make_unique<batleth::Device>(device_config);
     }
@@ -875,6 +892,7 @@ namespace klingon {
                 VK_NULL_HANDLE, // command buffer not needed for update
                 camera,
                 VK_NULL_HANDLE, // descriptor set not needed for update
+                VK_NULL_HANDLE, // texture descriptor set not needed for update
                 scene->get_game_objects()
             };
             m_point_light_system->update(temp_info, m_current_ubo);
@@ -894,6 +912,8 @@ namespace klingon {
         if (!m_global_set_layout) {
             create_global_descriptors();
         }
+
+        // TextureManager is already created in constructor
 
         // Create Forward+ compute pipeline if enabled and not already created
         if (m_config.renderer.forward_plus.enabled && m_light_culling_pipeline == VK_NULL_HANDLE) {
@@ -920,6 +940,7 @@ namespace klingon {
                 render_target_format,
                 m_global_set_layout->get_layout(),
                 m_forward_plus_set_layout ? m_forward_plus_set_layout->get_layout() : VK_NULL_HANDLE,
+                m_texture_manager->get_descriptor_layout(),
                 m_config.renderer.forward_plus.enabled
             );
         }
@@ -1055,6 +1076,7 @@ namespace klingon {
                                 ctx.command_buffer,
                                 m_active_scene->get_camera(),
                                 m_global_descriptor_sets[ctx.frame_index],
+                                m_texture_manager->get_descriptor_set(),
                                 m_active_scene->get_game_objects()
                             };
 
@@ -1200,6 +1222,7 @@ namespace klingon {
                             ctx.command_buffer,
                             m_active_scene->get_camera(),
                             m_global_descriptor_sets[ctx.frame_index],
+                            m_texture_manager->get_descriptor_set(),
                             m_active_scene->get_game_objects()
                         };
 
@@ -1333,6 +1356,21 @@ namespace klingon {
 
         FED_DEBUG("Created ImGui viewport texture descriptor set: {}", (void*)descriptor_set);
         return descriptor_set;
+    }
+
+    auto Renderer::get_allocator() -> VmaAllocator  {
+
+        if (m_allocator) return m_allocator->get_vma_allocator();
+
+        // Create transient allocator
+        batleth::TransientAllocator::Config alloc_config{};
+        alloc_config.instance = get_instance();
+        alloc_config.physical_device = get_physical_device();
+        alloc_config.device = get_device();
+
+        m_allocator = std::make_unique<batleth::TransientAllocator>(alloc_config);
+
+        return m_allocator->get_vma_allocator();
     }
 
     auto Renderer::render_scene(Scene *scene, float delta_time) -> void {

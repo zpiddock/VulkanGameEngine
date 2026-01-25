@@ -30,6 +30,7 @@ namespace klingon {
             VkFormat swapchain_format,
             VkDescriptorSetLayout global_set_layout,
             VkDescriptorSetLayout forward_plus_set_layout = VK_NULL_HANDLE,  // Optional Forward+ layout
+            VkDescriptorSetLayout texture_set_layout = VK_NULL_HANDLE,       // Bindless texture layout (Set 2)
             bool use_forward_plus = false
         );
 
@@ -53,6 +54,8 @@ namespace klingon {
         struct PushConstantData {
             glm::mat4 model_matrix{1.f};
             glm::mat4 normal_matrix{1.f};
+            uint32_t material_index{0};        // Index into material buffer
+            uint32_t _padding{0};              // Padding for std140 alignment (uvec2 requires 8-byte alignment)
             // Forward+ tile information (only used if Forward+ enabled)
             glm::uvec2 tile_count{0, 0};
             uint32_t tile_size{0};
@@ -64,6 +67,7 @@ namespace klingon {
         batleth::Device &m_device;
         VkDescriptorSetLayout m_global_set_layout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_forward_plus_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_texture_set_layout = VK_NULL_HANDLE;
         VkFormat m_swapchain_format = VK_FORMAT_UNDEFINED;
         bool m_use_forward_plus = true;
         std::vector<std::unique_ptr<batleth::Shader> > m_shaders;

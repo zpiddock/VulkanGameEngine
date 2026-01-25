@@ -19,22 +19,24 @@ namespace klingon {
         for (const auto& [id, obj] : scene.get_game_objects()) {
             float t = 0.0f;
 
-            if (obj.model) {
-                // AABB intersection for models
-                glm::mat4 model_matrix = obj.transform.mat4();
-                glm::mat4 inv_model_matrix = glm::inverse(model_matrix);
+            if (obj.model_data) {
+                for (const auto& mesh : obj.model_data->meshes) {
+                    // AABB intersection for models
+                    glm::mat4 model_matrix = obj.transform.mat4();
+                    glm::mat4 inv_model_matrix = glm::inverse(model_matrix);
 
-                glm::vec3 local_ray_origin = glm::vec3(inv_model_matrix * glm::vec4(ray_origin, 1.0f));
-                glm::vec3 local_ray_dir = glm::normalize(glm::vec3(inv_model_matrix * glm::vec4(ray_dir, 0.0f)));
+                    glm::vec3 local_ray_origin = glm::vec3(inv_model_matrix * glm::vec4(ray_origin, 1.0f));
+                    glm::vec3 local_ray_dir = glm::normalize(glm::vec3(inv_model_matrix * glm::vec4(ray_dir, 0.0f)));
 
-                const auto& aabb = obj.model->get_aabb();
-                if (ray_aabb_intersect(local_ray_origin, local_ray_dir, aabb.min, aabb.max, t)) {
-                    glm::vec3 local_hit_point = local_ray_origin + local_ray_dir * t;
-                    glm::vec3 world_hit_point = glm::vec3(model_matrix * glm::vec4(local_hit_point, 1.0f));
-                    float dist = glm::distance(ray_origin, world_hit_point);
-                    if (dist < min_dist) {
-                        min_dist = dist;
-                        closest_obj = id;
+                    const auto& aabb = mesh->get_aabb();
+                    if (ray_aabb_intersect(local_ray_origin, local_ray_dir, aabb.min, aabb.max, t)) {
+                        glm::vec3 local_hit_point = local_ray_origin + local_ray_dir * t;
+                        glm::vec3 world_hit_point = glm::vec3(model_matrix * glm::vec4(local_hit_point, 1.0f));
+                        float dist = glm::distance(ray_origin, world_hit_point);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            closest_obj = id;
+                        }
                     }
                 }
             } else if (obj.point_light) {

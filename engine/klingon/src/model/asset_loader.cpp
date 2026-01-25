@@ -169,12 +169,15 @@ namespace klingon {
             model_data->materials.emplace_back();
         }
 
-        // Process meshes
+        // Process meshes and capture material indices
         FED_TRACE("Processing {} meshes", scene->mNumMeshes);
         for (uint32_t i = 0; i < scene->mNumMeshes; ++i) {
-            MeshData mesh_data = process_mesh(scene->mMeshes[i]);
+            const aiMesh* assimp_mesh = scene->mMeshes[i];
+            MeshData mesh_data = process_mesh(assimp_mesh);
             auto mesh = std::make_shared<Mesh>(m_device, mesh_data);
             model_data->meshes.push_back(mesh);
+            // Store material index for this mesh
+            model_data->mesh_material_indices.push_back(assimp_mesh->mMaterialIndex);
         }
 
         // Process node hierarchy
@@ -190,6 +193,9 @@ namespace klingon {
         model_data->material_buffer_offset = m_texture_manager.upload_materials(gpu_materials);
 
         FED_TRACE("Materials uploaded starting at index {}", model_data->material_buffer_offset);
+
+        // Update descriptor sets after loading textures and materials
+        m_texture_manager.update_descriptors();
 
         return model_data;
     }
@@ -256,10 +262,23 @@ namespace klingon {
     auto AssetLoader::process_material(const aiMaterial* assimp_material, const std::string& model_dir) -> Material {
         Material material;
 
-        // Base color
-        aiColor4D base_color;
-        if (assimp_material->Get(AI_MATKEY_COLOR_DIFFUSE, base_color) == AI_SUCCESS) {
-            material.gpu_data.base_color_factor = {base_color.r, base_color.g, base_color.b, base_color.a};
+        // Base color - default to white
+        // NOTE: Many FBX exports set diffuse color to gray (0.5-0.6) even for textured materials
+        // We'll store it but may override to white later if texture is present
+        aiColor4D base_color(1.0f, 1.0f, 1.0f, 1.0f);
+        bool has_base_color = (assimp_material->Get(AI_MATKEY_COLOR_DIFFUSE, base_color) == AI_SUCCESS);
+
+        // Check for opacity property (transparency)
+        float opacity = 1.0f;
+        if (assimp_material->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+            base_color.a = opacity;
+            FED_TRACE("Material opacity: {}", opacity);
+        }
+
+        material.gpu_data.base_color_factor = {base_color.r, base_color.g, base_color.b, base_color.a};
+
+        if (has_base_color) {
+            FED_TRACE("Material base color: ({}, {}, {}, {})", base_color.r, base_color.g, base_color.b, base_color.a);
         }
 
         // PBR properties (if available)
@@ -273,8 +292,8 @@ namespace klingon {
         // Load albedo/diffuse texture
         aiString texture_path;
         if (assimp_material->GetTexture(aiTextureType_DIFFUSE, 0, &texture_path) == AI_SUCCESS) {
-            std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
-            material.albedo_texture_path = full_path.string();
+            // std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
+            material.albedo_texture_path = texture_path.C_Str();
 
             uint32_t tex_index = m_texture_manager.load_texture(
                 material.albedo_texture_path,
@@ -284,13 +303,20 @@ namespace klingon {
 
             material.gpu_data.albedo_texture_index = tex_index;
             material.set_has_albedo(true);
-            FED_TRACE("Loaded albedo texture: {} (index {})", material.albedo_texture_path, tex_index);
+
+            // Override RGB to white when texture is present (common for FBX models)
+            // The texture contains the full color information
+            // IMPORTANT: Preserve alpha channel for transparency
+            float original_alpha = material.gpu_data.base_color_factor.a;
+            material.gpu_data.base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, original_alpha);
+
+            FED_TRACE("Loaded albedo texture: {} (index {}), overriding base_color_factor to white", material.albedo_texture_path, tex_index);
         }
 
         // Load normal map
         if (assimp_material->GetTexture(aiTextureType_NORMALS, 0, &texture_path) == AI_SUCCESS) {
-            std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
-            material.normal_texture_path = full_path.string();
+            // std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
+            material.normal_texture_path = texture_path.C_Str();
 
             uint32_t tex_index = m_texture_manager.load_texture(
                 material.normal_texture_path,
@@ -306,8 +332,8 @@ namespace klingon {
         // Load metallic/roughness texture (typically combined in one texture)
         if (assimp_material->GetTexture(aiTextureType_UNKNOWN, 0, &texture_path) == AI_SUCCESS ||
             assimp_material->GetTexture(aiTextureType_METALNESS, 0, &texture_path) == AI_SUCCESS) {
-            std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
-            material.pbr_texture_path = full_path.string();
+            // std::filesystem::path full_path = std::filesystem::path(model_dir) / texture_path.C_Str();
+            material.pbr_texture_path = texture_path.C_Str();
 
             uint32_t tex_index = m_texture_manager.load_texture(
                 material.pbr_texture_path,

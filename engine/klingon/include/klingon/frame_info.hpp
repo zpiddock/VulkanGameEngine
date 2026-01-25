@@ -58,6 +58,7 @@ namespace klingon {
         VkCommandBuffer command_buffer;
         Camera &camera;
         VkDescriptorSet global_descriptor_set;
+        VkDescriptorSet texture_descriptor_set;  // Bindless texture descriptor set (Set 2)
         std::unordered_map<unsigned int, GameObject> &game_objects;
     };
 } // namespace klingon

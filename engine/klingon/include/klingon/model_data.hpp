@@ -40,6 +40,7 @@ namespace klingon {
         std::vector<std::shared_ptr<Mesh>> meshes;
         std::vector<Material> materials;
         std::vector<ModelNode> nodes;
+        std::vector<uint32_t> mesh_material_indices;  // Maps mesh index to material index
         uint32_t root_node_index = 0;
 
         // Material buffer indices (set when uploaded to GPU)

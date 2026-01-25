@@ -1,9 +1,10 @@
 #pragma once
 
 #include "klingon/transform.hpp"
-#include "klingon/model/mesh.h"
+#include "klingon/model_data.hpp"
 #include <memory>
 #include <unordered_map>
+#include <string>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -71,7 +72,14 @@ namespace klingon {
         // Public members for easy access
         glm::vec3 color{1.f, 1.f, 1.f};
         Transform transform{};
-        std::shared_ptr<Mesh> model{};
+
+        // Model data - runtime only (NOT serialized, loaded from model_filepath)
+        std::shared_ptr<ModelData> model_data{};
+
+        // Model file path - serialized for scene persistence
+        std::string model_filepath;
+
+        // TODO: Replace with ECS
         std::unique_ptr<PointLightComponent> point_light = nullptr;
 
         template <class Archive>
@@ -80,6 +88,7 @@ namespace klingon {
                 m_id,
                 color,
                 transform,
+                model_filepath,  // Serialize the path, not the model_data
                 point_light
             );
         }

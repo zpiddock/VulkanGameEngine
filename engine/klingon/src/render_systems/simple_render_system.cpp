@@ -14,11 +14,13 @@ namespace klingon {
         VkFormat swapchain_format,
         VkDescriptorSetLayout global_set_layout,
         VkDescriptorSetLayout forward_plus_set_layout,
+        VkDescriptorSetLayout texture_set_layout,
         bool use_forward_plus
     )
         : m_device{device}
           , m_global_set_layout{global_set_layout}
           , m_forward_plus_set_layout{forward_plus_set_layout}
+          , m_texture_set_layout{texture_set_layout}
           , m_swapchain_format{swapchain_format}
           , m_use_forward_plus{use_forward_plus} {
         create_pipeline(swapchain_format, global_set_layout);
@@ -70,11 +72,11 @@ namespace klingon {
         pipeline_config.vertex_binding_descriptions = binding_descriptions;
         pipeline_config.vertex_attribute_descriptions = attribute_descriptions;
 
-        // Add descriptor set layouts (global + Forward+ if enabled)
+        // Add descriptor set layouts (Set 0: Global, Set 1: Forward+, Set 2: Textures)
         if (m_use_forward_plus && m_forward_plus_set_layout != VK_NULL_HANDLE) {
-            pipeline_config.descriptor_set_layouts = {global_set_layout, m_forward_plus_set_layout};
+            pipeline_config.descriptor_set_layouts = {global_set_layout, m_forward_plus_set_layout, m_texture_set_layout};
         } else {
-            pipeline_config.descriptor_set_layouts = {global_set_layout};
+            pipeline_config.descriptor_set_layouts = {global_set_layout, m_texture_set_layout};
         }
 
         pipeline_config.push_constant_ranges = {push_constant_range};
@@ -83,8 +85,17 @@ namespace klingon {
         pipeline_config.cull_mode = VK_CULL_MODE_NONE;
         pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_config.enable_depth_test = true;
-        pipeline_config.enable_depth_write = true;
-        pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;  // Changed for depth pre-pass compatibility
+        pipeline_config.enable_depth_write = false;  // Depth prepass writes depth, main pass only reads
+        pipeline_config.depth_compare_op = VK_COMPARE_OP_EQUAL;  // Exact match with depth prepass values
+
+        // Enable alpha blending for transparency
+        pipeline_config.enable_blending = true;
+        pipeline_config.src_color_blend_factor = VK_BLEND_FACTOR_SRC_ALPHA;
+        pipeline_config.dst_color_blend_factor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        pipeline_config.color_blend_op = VK_BLEND_OP_ADD;
+        pipeline_config.src_alpha_blend_factor = VK_BLEND_FACTOR_ONE;
+        pipeline_config.dst_alpha_blend_factor = VK_BLEND_FACTOR_ZERO;
+        pipeline_config.alpha_blend_op = VK_BLEND_OP_ADD;
 
         m_pipeline = std::make_unique<batleth::Pipeline>(pipeline_config);
         FED_INFO("SimpleRenderSystem created successfully");
@@ -94,12 +105,12 @@ namespace klingon {
         // Bind pipeline
         ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
-        // Bind descriptor sets
+        // Bind descriptor sets (Set 0: Global, Set 1: Forward+, Set 2: Textures)
         if (m_use_forward_plus && m_forward_plus_descriptor_set != VK_NULL_HANDLE) {
-            // Bind both global and Forward+ descriptor sets
             VkDescriptorSet descriptor_sets[] = {
-                frame_info.global_descriptor_set,    // Set 0
-                m_forward_plus_descriptor_set         // Set 1
+                frame_info.global_descriptor_set,      // Set 0
+                m_forward_plus_descriptor_set,          // Set 1
+                frame_info.texture_descriptor_set       // Set 2
             };
 
             ::vkCmdBindDescriptorSets(
@@ -107,13 +118,14 @@ namespace klingon {
                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_pipeline->get_layout(),
                 0,
-                2,  // Bind 2 sets
+                3,  // Bind 3 sets
                 descriptor_sets,
                 0,
                 nullptr
             );
         } else {
-            // Bind only global descriptor set
+            // No Forward+: bind global (Set 0) and textures (Set 2)
+            // NOTE: Must bind to correct indices, skip Set 1
             ::vkCmdBindDescriptorSets(
                 frame_info.command_buffer,
                 VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -124,34 +136,55 @@ namespace klingon {
                 0,
                 nullptr
             );
+
+            ::vkCmdBindDescriptorSets(
+                frame_info.command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_pipeline->get_layout(),
+                1,  // Bind to Set 1 (textures are now Set 1 when no Forward+)
+                1,
+                &frame_info.texture_descriptor_set,
+                0,
+                nullptr
+            );
         }
 
         // Render each game object
         for (auto &obj: frame_info.game_objects | std::views::values) {
-            if (obj.model == nullptr) continue;
+            if (obj.model_data == nullptr) continue;
 
-            PushConstantData push{};
-            push.model_matrix = obj.transform.mat4();
-            push.normal_matrix = obj.transform.normal_matrix();
+            // Render each mesh with the root object transform (simplified, no node hierarchy)
+            for (size_t mesh_idx = 0; mesh_idx < obj.model_data->meshes.size(); ++mesh_idx) {
+                auto& mesh = obj.model_data->meshes[mesh_idx];
 
-            // Add Forward+ tile information if enabled
-            if (m_use_forward_plus) {
-                push.tile_count = glm::uvec2(m_tile_count_x, m_tile_count_y);
-                push.tile_size = m_tile_size;
-                push.max_lights_per_tile = m_max_lights_per_tile;
+                // Setup push constants
+                PushConstantData push{};
+                push.model_matrix = obj.transform.mat4();
+                push.normal_matrix = obj.transform.normal_matrix();
+
+                // Get the correct material index for this mesh
+                uint32_t mesh_material_idx = obj.model_data->mesh_material_indices[mesh_idx];
+                push.material_index = obj.model_data->material_buffer_offset + mesh_material_idx;
+
+                // Add Forward+ tile information if enabled
+                if (m_use_forward_plus) {
+                    push.tile_count = glm::uvec2(m_tile_count_x, m_tile_count_y);
+                    push.tile_size = m_tile_size;
+                    push.max_lights_per_tile = m_max_lights_per_tile;
+                }
+
+                ::vkCmdPushConstants(
+                    frame_info.command_buffer,
+                    m_pipeline->get_layout(),
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(PushConstantData),
+                    &push
+                );
+
+                mesh->bind(frame_info.command_buffer);
+                mesh->draw(frame_info.command_buffer);
             }
-
-            ::vkCmdPushConstants(
-                frame_info.command_buffer,
-                m_pipeline->get_layout(),
-                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                0,
-                sizeof(PushConstantData),
-                &push
-            );
-
-            obj.model->bind(frame_info.command_buffer);
-            obj.model->draw(frame_info.command_buffer);
         }
     }
 

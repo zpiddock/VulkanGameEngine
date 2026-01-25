@@ -1,8 +1,10 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout(location = 0) in vec3 inColour;
 layout(location = 1) in vec3 fragPosWorld;
 layout(location = 2) in vec3 fragNormalWorldSpace;
+layout(location = 3) in vec2 fragUV;
 
 layout(location = 0) out vec4 outColour;
 
@@ -22,41 +24,104 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     int numLights;
 } ubo;
 
+// Set 2: Bindless textures and materials
+layout(set = 2, binding = 0) uniform sampler2D albedoTextures[];
+layout(set = 2, binding = 1) uniform sampler2D normalTextures[];
+layout(set = 2, binding = 2) uniform sampler2D pbrTextures[];
+
+// Material buffer (std430 packing)
+struct MaterialData {
+    vec4 baseColorFactor;
+    float metallicFactor;
+    float roughnessFactor;
+    float normalScale;
+    uint albedoTextureIndex;
+    uint normalTextureIndex;
+    uint pbrTextureIndex;
+    uint materialFlags;
+    uint _padding;
+};
+
+layout(set = 2, binding = 3) readonly buffer MaterialBuffer {
+    MaterialData materials[];
+} materialBuffer;
+
 layout(push_constant) uniform Push {
-    mat4 modelMatrix; // projection * view * model
+    mat4 modelMatrix;
     mat4 normalMatrix;
+    uint materialIndex;  // Index into materialBuffer.materials[]
 } push;
 
-void main() {
+vec3 getNormalFromMap() {
+    MaterialData mat = materialBuffer.materials[push.materialIndex];
 
-    vec3 diffuseLight = ubo.ambientLightColour.xyz * ubo.ambientLightColour.w;
-    vec3 specularLight = vec3(0.0);
-    vec3 surfaceNormal = normalize(fragNormalWorldSpace);
-
-    vec3 cameraWorldPos = ubo.inverseViewMatrix[3].xyz;
-    vec3 viewDirection = normalize(cameraWorldPos - fragPosWorld);
-
-    for(int i = 0; i < ubo.numLights; i++) {
-
-        PointLight light = ubo.pointLights[i];
-        vec3 directionToLight = light.position.xyz - fragPosWorld;
-        float attenutation = 1.0 / dot(directionToLight, directionToLight);
-
-        directionToLight = normalize(directionToLight);
-
-        float cosAngIncidence = max(dot(surfaceNormal, directionToLight), 0);
-        vec3 intensity = light.colour.xyz * light.colour.w * attenutation;
-
-        diffuseLight += intensity * cosAngIncidence;
-
-        // Specular
-        vec3 halfAngle = normalize(directionToLight + viewDirection);
-        float blinnTerm = dot(surfaceNormal, halfAngle);
-        blinnTerm = clamp(blinnTerm, 0, 1);
-        blinnTerm = pow(blinnTerm, 32.0); // Higher value = sharper higlights
-
-        specularLight += intensity * blinnTerm;
+    // If no normal map, use vertex normal
+    if ((mat.materialFlags & 2u) == 0u) {
+        return normalize(fragNormalWorldSpace);
     }
 
-    outColour = vec4(diffuseLight * inColour + specularLight * inColour, 1.0);
+    // Sample normal map
+    vec3 tangentNormal = texture(normalTextures[nonuniformEXT(mat.normalTextureIndex)], fragUV).xyz * 2.0 - 1.0;
+    tangentNormal.xy *= mat.normalScale;
+
+    // Derive TBN matrix from derivatives (no tangent attribute needed)
+    vec3 Q1 = dFdx(fragPosWorld);
+    vec3 Q2 = dFdy(fragPosWorld);
+    vec2 st1 = dFdx(fragUV);
+    vec2 st2 = dFdy(fragUV);
+
+    vec3 N = normalize(fragNormalWorldSpace);
+    vec3 T = normalize(Q1*st2.t - Q2*st1.t);
+    vec3 B = -normalize(cross(N, T));
+    mat3 TBN = mat3(T, B, N);
+
+    return normalize(TBN * tangentNormal);
+}
+
+void main() {
+    MaterialData mat = materialBuffer.materials[push.materialIndex];
+
+    // Sample albedo with alpha
+    vec4 albedoSample = vec4(1.0);
+    if ((mat.materialFlags & 1u) != 0u) {
+        albedoSample = texture(albedoTextures[nonuniformEXT(mat.albedoTextureIndex)], fragUV);
+    }
+    vec3 albedo = inColour * mat.baseColorFactor.rgb * albedoSample.rgb;
+    float alpha = mat.baseColorFactor.a * albedoSample.a;
+
+    // Sample PBR properties
+    float metallic = mat.metallicFactor;
+    float roughness = mat.roughnessFactor;
+    if ((mat.materialFlags & 4u) != 0u) {
+        vec2 pbr = texture(pbrTextures[nonuniformEXT(mat.pbrTextureIndex)], fragUV).rg;
+        metallic *= pbr.r;
+        roughness *= pbr.g;
+    }
+
+    // Get normal (with normal mapping if available)
+    vec3 N = getNormalFromMap();
+    vec3 V = normalize(ubo.inverseViewMatrix[3].xyz - fragPosWorld);
+
+    // Lighting (simplified PBR)
+    vec3 diffuseLight = ubo.ambientLightColour.xyz * ubo.ambientLightColour.w;
+    vec3 specularLight = vec3(0.0);
+
+    for(int i = 0; i < ubo.numLights; i++) {
+        PointLight light = ubo.pointLights[i];
+        vec3 L = light.position.xyz - fragPosWorld;
+        float attenuation = 1.0 / dot(L, L);
+        L = normalize(L);
+
+        float NdotL = max(dot(N, L), 0.0);
+        vec3 intensity = light.colour.xyz * light.colour.w * attenuation;
+
+        diffuseLight += intensity * NdotL;
+
+        // Specular using Blinn-Phong (simplified)
+        vec3 H = normalize(L + V);
+        float spec = pow(max(dot(N, H), 0.0), mix(256.0, 32.0, roughness));
+        specularLight += intensity * spec * mix(0.04, 1.0, metallic);
+    }
+
+    outColour = vec4(diffuseLight * albedo + specularLight, alpha);
 }

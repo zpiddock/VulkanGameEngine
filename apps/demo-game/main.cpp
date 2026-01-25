@@ -2,7 +2,7 @@
 #include "klingon/scene.hpp"
 #include "klingon/movement_controller.hpp"
 #include "klingon/game_object.hpp"
-#include "klingon/model/mesh.h"
+#include "klingon/model/asset_loader.hpp"
 #include "borg/input.hpp"
 #include "borg/window.hpp"
 #include "federation/log.hpp"
@@ -54,30 +54,43 @@ auto main() -> int {
         }
 
         auto &device = engine.get_renderer().get_device_ref();
+        auto &texture_manager = engine.get_renderer().get_texture_manager();
+
+        // Create AssetLoader for loading models with materials
+        klingon::AssetLoader::Config asset_config{
+            .device = device,
+            .texture_manager = texture_manager,
+            .base_texture_path = "assets/textures/"
+        };
+        klingon::AssetLoader asset_loader(asset_config);
 
         // Load smooth vase
         auto smooth_vase = klingon::GameObject::create_game_object();
-        smooth_vase.model = klingon::Mesh::create_from_file(device, "assets/models/smooth_vase.obj");
+        smooth_vase.model_filepath = "assets/models/smooth_vase.obj";
+        smooth_vase.model_data = asset_loader.load_model(smooth_vase.model_filepath);
         smooth_vase.transform.translation = {-0.5f, 0.5f, 0.0f};
         smooth_vase.transform.scale = glm::vec3{3.f};
         scene.add_game_object(std::move(smooth_vase));
 
         // auto human = klingon::GameObject::create_game_object();
-        // human.model = klingon::Mesh::create_from_file(device, "assets/models/test_export/human.obj");
+        // human.model_filepath = "assets/models/human.obj";
+        // human.model_data = asset_loader.load_model(human.model_filepath);
         // human.transform.rotation = glm::vec3{0.f, glm::radians(180.f), glm::radians(180.f)};
         // human.transform.translation = {0.f, 0.f, 0.f};
         // scene.add_game_object(std::move(human));
 
         // Load flat vase
         auto flat_vase = klingon::GameObject::create_game_object();
-        flat_vase.model = klingon::Mesh::create_from_file(device, "assets/models/flat_vase.obj");
+        flat_vase.model_filepath = "assets/models/flat_vase.obj";
+        flat_vase.model_data = asset_loader.load_model(flat_vase.model_filepath);
         flat_vase.transform.translation = {0.5f, 0.5f, 0.0f};
         flat_vase.transform.scale = glm::vec3{3.f};
         scene.add_game_object(std::move(flat_vase));
 
         // Load floor (quad)
         auto floor = klingon::GameObject::create_game_object();
-        floor.model = klingon::Mesh::create_from_file(device, "assets/models/quad.obj");
+        floor.model_filepath = "assets/models/quad.obj";
+        floor.model_data = asset_loader.load_model(floor.model_filepath);
         floor.transform.translation = {0.f, 0.5f, 0.f};
         floor.transform.scale = glm::vec3{3.f, 1.f, 3.f};
         scene.add_game_object(std::move(floor));

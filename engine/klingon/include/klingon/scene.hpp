@@ -10,6 +10,7 @@
 #include "game_object.hpp"
 #include "camera.hpp"
 #include "transform.hpp"
+#include "model/asset_loader.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -70,6 +71,13 @@ namespace klingon {
         auto set_name(const std::string &name) -> void;
 
         auto get_name() const -> const std::string &;
+
+        /**
+         * Reload all model resources from disk
+         * Called after deserializing a scene to rebuild GPU resources
+         * @param asset_loader Asset loader to use for loading models
+         */
+        auto reload_all_resources(AssetLoader& asset_loader) -> void;
 
         template <class Archive>
         void serialize(Archive& ar) {

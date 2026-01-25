@@ -21,6 +21,7 @@
 #include "render_systems/simple_render_system.hpp"
 #include "render_systems/blit_render_system.hpp"
 #include "render_systems/depth_prepass_system.hpp"
+#include "texture_manager.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -102,6 +103,9 @@ namespace klingon {
         // Device access for render systems
         auto get_device_ref() -> batleth::Device & { return *m_device; }
 
+        // Texture manager access
+        auto get_texture_manager() -> TextureManager& { return *m_texture_manager; }
+
         // Scene rendering (new Scene API)
         auto render_scene(Scene *scene, float delta_time) -> void;
 
@@ -139,6 +143,8 @@ namespace klingon {
          * @return ImTextureID that can be used with ImGui::Image()
          */
         auto create_imgui_viewport_texture() -> void*;
+
+        auto get_allocator() -> VmaAllocator;
 
     private:
         auto create_instance() -> void;
@@ -183,6 +189,7 @@ namespace klingon {
         // Vulkan objects - ordered for proper RAII destruction
         // Destruction happens in REVERSE order of declaration
         // So declare in order: instance -> surface -> device -> resources that depend on device
+        std::unique_ptr<batleth::TransientAllocator> m_allocator;
         std::unique_ptr<batleth::Instance> m_instance;
         std::unique_ptr<batleth::Surface> m_surface;
         std::unique_ptr<batleth::Device> m_device;
@@ -233,6 +240,9 @@ namespace klingon {
         VkPipelineLayout m_light_culling_pipeline_layout = VK_NULL_HANDLE;
         VkPipeline m_light_culling_pipeline = VK_NULL_HANDLE;
         VkSampler m_depth_sampler = VK_NULL_HANDLE;
+
+        // Texture management
+        std::unique_ptr<TextureManager> m_texture_manager;
 
         // Render systems
         std::unique_ptr<SimpleRenderSystem> m_simple_render_system;

@@ -91,7 +91,7 @@ namespace klingon {
 
         // Render each game object (depth only)
         for (auto &obj: frame_info.game_objects | std::views::values) {
-            if (obj.model == nullptr) continue;
+            if (obj.model_data == nullptr) continue;
 
             PushConstantData push{};
             push.model_matrix = obj.transform.mat4();
@@ -106,8 +106,12 @@ namespace klingon {
                 &push
             );
 
-            obj.model->bind(frame_info.command_buffer);
-            obj.model->draw(frame_info.command_buffer);
+            for (auto &mesh: obj.model_data->meshes) {
+                mesh->bind(frame_info.command_buffer);
+                mesh->draw(frame_info.command_buffer);
+            }
+            // obj.model->bind(frame_info.command_buffer);
+            // obj.model->draw(frame_info.command_buffer);
         }
     }
 
