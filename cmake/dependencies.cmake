@@ -143,8 +143,15 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# STB Headers
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb
+    GIT_SHALLOW TRUE
+)
+
 # Make dependencies available
-FetchContent_MakeAvailable(glfw glm vma imgui imguizmo tinyobjloader assimp ser20)
+FetchContent_MakeAvailable(glfw glm vma imgui imguizmo tinyobjloader assimp ser20 stb)
 
 # Disable warnings for third-party libraries
 if(TARGET glfw)
@@ -155,6 +162,15 @@ endif()
 if(TARGET VulkanMemoryAllocator)
     target_compile_options(VulkanMemoryAllocator INTERFACE -w)
 endif()
+
+add_library(stb INTERFACE
+    ${stb_SOURCE_DIR}/stb_image.h
+)
+
+target_include_directories(stb INTERFACE
+    ${stb_SOURCE_DIR}
+)
+
 
 # ImGui needs special handling as it doesn't have CMakeLists.txt
 # Create ImGui library target as SHARED (DLL) to avoid context issues across modules

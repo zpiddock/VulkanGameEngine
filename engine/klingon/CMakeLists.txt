@@ -39,6 +39,7 @@ target_link_libraries(klingon
         imgui
         tinyobjloader
         assimp
+        stb
 )
 
 # Set output name and versioning
