@@ -18,6 +18,7 @@ add_library(klingon SHARED
         src/render_graph.cpp
         src/scene.cpp
         src/model/asset_loader.cpp
+        src/model_data.cpp
 )
 
 target_include_directories(klingon
