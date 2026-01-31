@@ -1,5 +1,7 @@
 #include "klingon/render_systems/depth_prepass_system.hpp"
+#include "klingon/render_systems/simple_render_system.hpp"  // For RenderMode enum
 #include "klingon/model/mesh.h"
+#include "klingon/material.hpp"  // For Material access
 #include "federation/log.hpp"
 #include "batleth/shader.hpp"
 
@@ -74,6 +76,11 @@ namespace klingon {
     }
 
     auto DepthPrepassSystem::render(FrameInfo &frame_info) -> void {
+        // Delegate to the render mode version with All mode for backward compatibility
+        render(frame_info, RenderMode::All);
+    }
+
+    auto DepthPrepassSystem::render(FrameInfo &frame_info, RenderMode mode) -> void {
         // Bind pipeline
         ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
@@ -93,25 +100,41 @@ namespace klingon {
         for (auto &obj: frame_info.game_objects | std::views::values) {
             if (obj.model_data == nullptr) continue;
 
-            PushConstantData push{};
-            push.model_matrix = obj.transform.mat4();
-            push.normal_matrix = obj.transform.normal_matrix();
+            // Render each mesh with filtering
+            for (size_t mesh_idx = 0; mesh_idx < obj.model_data->meshes.size(); ++mesh_idx) {
+                auto& mesh = obj.model_data->meshes[mesh_idx];
 
-            ::vkCmdPushConstants(
-                frame_info.command_buffer,
-                m_pipeline->get_layout(),
-                VK_SHADER_STAGE_VERTEX_BIT,
-                0,
-                sizeof(PushConstantData),
-                &push
-            );
+                // Check transparency if filtering is enabled
+                if (mode != RenderMode::All) {
+                    uint32_t material_idx = obj.model_data->mesh_material_indices[mesh_idx];
+                    auto& material = obj.model_data->materials[material_idx];
 
-            for (auto &mesh: obj.model_data->meshes) {
+                    bool is_transparent =
+                        ((material.gpu_data.material_flags & 8u) != 0u) ||  // Has opacity texture
+                        (material.gpu_data.base_color_factor.a < 0.99f);    // Material alpha
+
+                    // Skip based on mode
+                    if (mode == RenderMode::OpaqueOnly && is_transparent) continue;
+                    if (mode == RenderMode::TransparentOnly && !is_transparent) continue;
+                }
+
+                // Setup push constants
+                PushConstantData push{};
+                push.model_matrix = obj.transform.mat4();
+                push.normal_matrix = obj.transform.normal_matrix();
+
+                ::vkCmdPushConstants(
+                    frame_info.command_buffer,
+                    m_pipeline->get_layout(),
+                    VK_SHADER_STAGE_VERTEX_BIT,
+                    0,
+                    sizeof(PushConstantData),
+                    &push
+                );
+
                 mesh->bind(frame_info.command_buffer);
                 mesh->draw(frame_info.command_buffer);
             }
-            // obj.model->bind(frame_info.command_buffer);
-            // obj.model->draw(frame_info.command_buffer);
         }
     }
 

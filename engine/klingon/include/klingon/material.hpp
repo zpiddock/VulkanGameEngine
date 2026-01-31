@@ -28,10 +28,11 @@ namespace klingon {
         alignas(4) uint32_t albedo_texture_index = 0;  // Bindless texture indices
         alignas(4) uint32_t normal_texture_index = 1;
         alignas(4) uint32_t pbr_texture_index = 2;
-        alignas(4) uint32_t material_flags = 0;  // bit 0: has_albedo, bit 1: has_normal, bit 2: has_pbr
-        alignas(4) uint32_t _padding = 0;
+        alignas(4) uint32_t opacity_texture_index = 3;
+        alignas(4) uint32_t material_flags = 0;  // bit 0: has_albedo, bit 1: has_normal, bit 2: has_pbr, bit 3: has_opacity
+        alignas(4) uint32_t _padding[3]{0, 0, 0};  // Pad to 64 bytes (std430 array alignment)
     };
-    static_assert(sizeof(MaterialGPU) == 48, "MaterialGPU must be 48 bytes for std430");
+    static_assert(sizeof(MaterialGPU) == 64, "MaterialGPU must be 64 bytes for std430 array alignment");
 
     /**
      * CPU-side material with texture paths and GPU data
@@ -44,6 +45,7 @@ namespace klingon {
         std::string albedo_texture_path;
         std::string normal_texture_path;
         std::string pbr_texture_path;
+        std::string opacity_texture_path;
 
         Material() {
             gpu_data.material_flags = 0; // No textures by default
@@ -63,6 +65,11 @@ namespace klingon {
         auto set_has_pbr(bool has) -> void {
             if (has) gpu_data.material_flags |= 4u;
             else gpu_data.material_flags &= ~4u;
+        }
+
+        auto set_has_opacity(bool has) -> void {
+            if (has) gpu_data.material_flags |= 8u;
+            else gpu_data.material_flags &= ~8u;
         }
 
         // NO serialize() - Material is runtime-only, part of ModelData

@@ -62,6 +62,7 @@ namespace klingon {
         [[nodiscard]] auto get_default_albedo_index() const -> uint32_t { return 0; }
         [[nodiscard]] auto get_default_normal_index() const -> uint32_t { return 1; }
         [[nodiscard]] auto get_default_pbr_index() const -> uint32_t { return 2; }
+        [[nodiscard]] auto get_default_opacity_index() const -> uint32_t { return 3; }
 
         /**
          * Material buffer management
@@ -103,11 +104,13 @@ namespace klingon {
         std::vector<std::unique_ptr<batleth::Texture>> m_albedo_textures;
         std::vector<std::unique_ptr<batleth::Texture>> m_normal_textures;
         std::vector<std::unique_ptr<batleth::Texture>> m_pbr_textures;
+        std::vector<std::unique_ptr<batleth::Texture>> m_opacity_textures;
 
         // Texture path -> index cache (prevent duplicate loads)
         std::unordered_map<std::string, uint32_t> m_albedo_cache;
         std::unordered_map<std::string, uint32_t> m_normal_cache;
         std::unordered_map<std::string, uint32_t> m_pbr_cache;
+        std::unordered_map<std::string, uint32_t> m_opacity_cache;
 
         // Material buffer (SSBO)
         std::unique_ptr<batleth::Buffer> m_material_buffer;  // GPU buffer

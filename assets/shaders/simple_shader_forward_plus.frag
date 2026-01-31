@@ -37,6 +37,7 @@ layout(set = 1, binding = 2, std430) readonly buffer LightCount {
 layout(set = 2, binding = 0) uniform sampler2D albedoTextures[];
 layout(set = 2, binding = 1) uniform sampler2D normalTextures[];
 layout(set = 2, binding = 2) uniform sampler2D pbrTextures[];
+layout(set = 2, binding = 3) uniform sampler2D opacityTextures[];
 
 // Material buffer (std430 packing)
 struct MaterialData {
@@ -47,11 +48,12 @@ struct MaterialData {
     uint albedoTextureIndex;
     uint normalTextureIndex;
     uint pbrTextureIndex;
+    uint opacityTextureIndex;
     uint materialFlags;
-    uint _padding;
+    uint _padding[3];  // Pad to 64 bytes for array alignment
 };
 
-layout(set = 2, binding = 3) readonly buffer MaterialBuffer {
+layout(set = 2, binding = 4) readonly buffer MaterialBuffer {
     MaterialData materials[];
 } materialBuffer;
 
@@ -102,6 +104,18 @@ void main() {
     vec3 albedo = inColour * mat.baseColorFactor.rgb * albedoSample.rgb;
     float alpha = mat.baseColorFactor.a * albedoSample.a;
 
+    // Sample opacity texture if present (multiplies with existing alpha)
+    if ((mat.materialFlags & 8u) != 0u) {  // bit 3 = has_opacity
+        float opacitySample = texture(opacityTextures[nonuniformEXT(mat.opacityTextureIndex)], fragUV).r;
+        alpha *= opacitySample;  // Use opacity directly: white=opaque, black=transparent
+    }
+
+    // Discard fully transparent fragments AND very low alpha materials
+    // Materials with alpha < 0.15 (like Eyewetness at 0.1) cause darkening even with specular-only
+    if (alpha < 0.15) {
+        discard;
+    }
+
     // Sample PBR properties
     float metallic = mat.metallicFactor;
     float roughness = mat.roughnessFactor;
@@ -146,5 +160,15 @@ void main() {
         specularLight += intensity * spec * mix(0.04, 1.0, metallic);
     }
 
-    outColour = vec4(diffuseLight * albedo + specularLight, alpha);
+    // For very low-alpha materials (< 0.2), render as specular-only glossy layer
+    // This prevents semi-transparent gray layers from darkening underlying geometry
+    vec3 finalColor;
+    if (alpha < 0.2) {
+        // Pure specular - no diffuse contribution at all
+        finalColor = specularLight;
+    } else {
+        // Normal PBR shading
+        finalColor = diffuseLight * albedo + specularLight;
+    }
+    outColour = vec4(finalColor, alpha);
 }

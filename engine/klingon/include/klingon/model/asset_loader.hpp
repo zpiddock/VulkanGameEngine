@@ -5,9 +5,13 @@
 #include "batleth/device.hpp"
 #include <string>
 #include <memory>
+
+#include "assimp/LogStream.hpp"
 #include "assimp/Importer.hpp"
+#include "assimp/Logger.hpp"
 #include "assimp/postprocess.h"
 #include "assimp/scene.h"
+#include "federation/log.hpp"
 
 #ifdef _WIN32
 #ifdef KLINGON_EXPORTS
@@ -58,5 +62,34 @@ namespace klingon {
         batleth::Device& m_device;
         TextureManager& m_texture_manager;
         std::string m_base_texture_path;
+    };
+
+    class KLINGON_API AssetLoaderLogStream : public Assimp::LogStream {
+
+        public:
+        explicit AssetLoaderLogStream(Assimp::Logger::ErrorSeverity severity) : m_severity(severity) {}
+
+        auto write(const char* message) -> void override {
+            std::string msg(message);
+            if (!msg.empty() && msg.back() == '\n') msg.pop_back();
+
+            switch (m_severity) {
+                case Assimp::Logger::ErrorSeverity::Err:
+                    FED_ERROR("[Assimp] {}", message);
+                    break;
+                case Assimp::Logger::ErrorSeverity::Warn:
+                    FED_WARN("[Assimp] {}", message);
+                    break;
+                case Assimp::Logger::ErrorSeverity::Info:
+                    FED_INFO("[Assimp] {}", message);
+                    break;
+                case Assimp::Logger::ErrorSeverity::Debugging:
+                    FED_DEBUG("[Assimp] {}", message);
+                    break;
+            }
+
+        }
+    private:
+        Assimp::Logger::ErrorSeverity m_severity;
     };
 } // klingon

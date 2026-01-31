@@ -20,6 +20,15 @@
 
 namespace klingon {
     /**
+     * Render mode for filtering opaque vs transparent geometry
+     */
+    enum class RenderMode {
+        All,              // Render everything (default for backward compat)
+        OpaqueOnly,       // Skip transparent meshes
+        TransparentOnly   // Only render transparent meshes (sorted back-to-front)
+    };
+
+    /**
      * Render system for standard mesh rendering with lighting.
      * Uses push constants for per-object data and UBO for global scene data.
      */
@@ -43,6 +52,9 @@ namespace klingon {
         // IRenderSystem interface
         auto render(FrameInfo &frame_info) -> void override;
 
+        // Render with filtering mode (for opaque/transparent separation)
+        auto render(FrameInfo &frame_info, RenderMode mode) -> void;
+
         auto on_swapchain_recreate(VkFormat format) -> void override;
 
         // Forward+ specific
@@ -63,6 +75,10 @@ namespace klingon {
         };
 
         auto create_pipeline(VkFormat swapchain_format, VkDescriptorSetLayout global_set_layout) -> void;
+
+        // Helper methods for transparency rendering
+        auto is_material_transparent(const Material& material) const -> bool;
+        auto render_mesh(GameObject& obj, size_t mesh_idx, FrameInfo& frame_info) -> void;
 
         batleth::Device &m_device;
         VkDescriptorSetLayout m_global_set_layout = VK_NULL_HANDLE;

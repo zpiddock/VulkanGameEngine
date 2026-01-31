@@ -1080,8 +1080,8 @@ namespace klingon {
                                 m_active_scene->get_game_objects()
                             };
 
-                            // Render depth only
-                            m_depth_prepass_system->render(frame_info);
+                            // Render depth only for opaque geometry
+                            m_depth_prepass_system->render(frame_info, RenderMode::OpaqueOnly);
                         }
                     )
                     .set_depth_attachment(depth_buffer, VK_ATTACHMENT_LOAD_OP_CLEAR, {1.0f, 0})
@@ -1226,8 +1226,8 @@ namespace klingon {
                             m_active_scene->get_game_objects()
                         };
 
-                        // Render game objects
-                        m_simple_render_system->render(frame_info);
+                        // Render opaque game objects only
+                        m_simple_render_system->render(frame_info, RenderMode::OpaqueOnly);
 
                         if (m_debug_rendering_enabled) {
                             // Render point lights
@@ -1255,6 +1255,58 @@ namespace klingon {
         builder.write(depth_buffer, batleth::ResourceUsage::DepthStencilWrite);
 
         // Forward+ resources (read light grid and count)
+        if (m_config.renderer.forward_plus.enabled) {
+            builder.read(light_grid, batleth::ResourceUsage::StorageBufferRead)
+                   .read(light_count, batleth::ResourceUsage::StorageBufferRead);
+        }
+
+        // NEW: Transparency pass - render transparent objects after opaque
+        builder.add_graphics_pass(
+                    "transparency_pass",
+                    [this, tile_count_x, tile_count_y, tile_size, max_lights_per_tile](const batleth::PassExecutionContext& ctx) {
+                        if (!m_active_scene) return;
+
+                        // Set Forward+ resources if enabled
+                        if (m_config.renderer.forward_plus.enabled) {
+                            m_simple_render_system->set_forward_plus_resources(
+                                m_forward_plus_descriptor_sets[ctx.frame_index],
+                                tile_count_x,
+                                tile_count_y,
+                                tile_size,
+                                max_lights_per_tile
+                            );
+                        }
+
+                        // Create frame info (same as forward shading)
+                        FrameInfo frame_info{
+                            static_cast<int>(ctx.frame_index),
+                            ctx.delta_time,
+                            ctx.command_buffer,
+                            m_active_scene->get_camera(),
+                            m_global_descriptor_sets[ctx.frame_index],
+                            m_texture_manager->get_descriptor_set(),
+                            m_active_scene->get_game_objects()
+                        };
+
+                        // Render ONLY transparent objects, sorted back-to-front
+                        m_simple_render_system->render(frame_info, RenderMode::TransparentOnly);
+                    }
+                )
+                .set_color_attachment(
+                    0,
+                    color_target,
+                    VK_ATTACHMENT_LOAD_OP_LOAD,  // LOAD - preserve opaque rendering
+                    {0.0f, 0.0f, 0.0f, 1.0f}     // Clear value unused (we LOAD)
+                )
+                .set_depth_attachment(
+                    depth_buffer,
+                    VK_ATTACHMENT_LOAD_OP_LOAD,  // LOAD - preserve opaque depth
+                    {1.0f, 0}
+                )
+                .read(depth_buffer, batleth::ResourceUsage::DepthStencilRead)  // Read-only depth
+                .write(color_target, batleth::ResourceUsage::ColorAttachment);
+
+        // Forward+ resources (read in transparency pass too)
         if (m_config.renderer.forward_plus.enabled) {
             builder.read(light_grid, batleth::ResourceUsage::StorageBufferRead)
                    .read(light_count, batleth::ResourceUsage::StorageBufferRead);

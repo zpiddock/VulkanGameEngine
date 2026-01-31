@@ -15,6 +15,8 @@
 #include "klingon/model/mesh.h"
 #include <filesystem>
 
+#include "assimp/DefaultLogger.hpp"
+
 namespace std {
     template<>
     struct hash<klingon::Vertex> {
@@ -121,6 +123,12 @@ namespace klingon {
         , m_texture_manager(config.texture_manager)
         , m_base_texture_path(config.base_texture_path) {
         FED_INFO("AssetLoader initialized (base_texture_path: {})", m_base_texture_path);
+        Assimp::DefaultLogger::create("", Assimp::Logger::VERBOSE);
+        auto* logger = Assimp::DefaultLogger::get();
+        logger->attachStream(new AssetLoaderLogStream(Assimp::Logger::ErrorSeverity::Err), ::Assimp::Logger::Err);
+        logger->attachStream(new AssetLoaderLogStream(Assimp::Logger::ErrorSeverity::Warn), ::Assimp::Logger::Warn);
+        logger->attachStream(new AssetLoaderLogStream(Assimp::Logger::ErrorSeverity::Info), ::Assimp::Logger::Info);
+        // logger->attachStream(new AssetLoaderLogStream(Assimp::Logger::ErrorSeverity::Debugging), ::Assimp::Logger::Debugging);
     }
 
     auto AssetLoader::load_model(const std::string& filepath) -> std::shared_ptr<ModelData> {
@@ -344,6 +352,22 @@ namespace klingon {
             material.gpu_data.pbr_texture_index = tex_index;
             material.set_has_pbr(true);
             FED_TRACE("Loaded PBR texture: {} (index {})", material.pbr_texture_path, tex_index);
+        }
+
+        // Load opacity/alpha texture
+        if (assimp_material->GetTexture(aiTextureType_OPACITY, 0, &texture_path) == AI_SUCCESS) {
+            // Extract just the filename from the path (handles absolute paths from exporters)
+            material.opacity_texture_path = texture_path.C_Str();
+
+            uint32_t tex_index = m_texture_manager.load_texture(
+                material.opacity_texture_path,
+                batleth::TextureType::Opacity,
+                true  // generate mipmaps
+            );
+
+            material.gpu_data.opacity_texture_index = tex_index;
+            material.set_has_opacity(true);
+            FED_TRACE("Loaded opacity texture: {} (index {})", material.opacity_texture_path, tex_index);
         }
 
         return material;

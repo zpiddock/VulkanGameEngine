@@ -19,6 +19,9 @@
 #endif
 
 namespace klingon {
+    // Forward declaration of RenderMode from simple_render_system.hpp
+    enum class RenderMode;
+
     /**
      * Render system for depth pre-pass.
      * Renders scene geometry depth-only to populate the depth buffer before the main shading pass.
@@ -43,6 +46,13 @@ namespace klingon {
          * @param frame_info Frame information including command buffer and game objects
          */
         auto render(FrameInfo &frame_info) -> void;
+
+        /**
+         * Render depth pre-pass with render mode filtering.
+         * @param frame_info Frame information including command buffer and game objects
+         * @param mode Render mode for filtering opaque vs transparent geometry
+         */
+        auto render(FrameInfo &frame_info, RenderMode mode) -> void;
 
         auto on_swapchain_recreate(VkFormat depth_format) -> void;
 

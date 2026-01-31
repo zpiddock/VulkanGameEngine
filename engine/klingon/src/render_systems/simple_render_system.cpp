@@ -1,10 +1,13 @@
 #include "klingon/render_systems/simple_render_system.hpp"
 #include "klingon/model/mesh.h"
+#include "klingon/material.hpp"
+#include "klingon/game_object.hpp"
 #include "federation/log.hpp"
 
 #include <stdexcept>
 #include <array>
 #include <ranges>
+#include <algorithm>
 
 #include "batleth/shader.hpp"
 
@@ -86,7 +89,7 @@ namespace klingon {
         pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_config.enable_depth_test = true;
         pipeline_config.enable_depth_write = false;  // Depth prepass writes depth, main pass only reads
-        pipeline_config.depth_compare_op = VK_COMPARE_OP_EQUAL;  // Exact match with depth prepass values
+        pipeline_config.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;  // Allow transparent geometry in front of opaque
 
         // Enable alpha blending for transparency
         pipeline_config.enable_blending = true;
@@ -102,6 +105,11 @@ namespace klingon {
     }
 
     auto SimpleRenderSystem::render(FrameInfo &frame_info) -> void {
+        // Delegate to the render mode version with All mode for backward compatibility
+        render(frame_info, RenderMode::All);
+    }
+
+    auto SimpleRenderSystem::render(FrameInfo &frame_info, RenderMode mode) -> void {
         // Bind pipeline
         ::vkCmdBindPipeline(frame_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->get_handle());
 
@@ -149,41 +157,55 @@ namespace klingon {
             );
         }
 
+        // Collect transparent meshes for sorting
+        struct TransparentMesh {
+            float distance;
+            GameObject* obj;
+            size_t mesh_idx;
+        };
+        std::vector<TransparentMesh> transparent_meshes;
+
+        // Get camera position for distance calculations
+        glm::vec3 cam_pos = glm::vec3(frame_info.camera.get_inverse_view()[3]);
+
         // Render each game object
         for (auto &obj: frame_info.game_objects | std::views::values) {
             if (obj.model_data == nullptr) continue;
 
-            // Render each mesh with the root object transform (simplified, no node hierarchy)
+            // Check each mesh individually (per-mesh transparency)
             for (size_t mesh_idx = 0; mesh_idx < obj.model_data->meshes.size(); ++mesh_idx) {
-                auto& mesh = obj.model_data->meshes[mesh_idx];
+                uint32_t material_idx = obj.model_data->mesh_material_indices[mesh_idx];
+                auto& material = obj.model_data->materials[material_idx];
 
-                // Setup push constants
-                PushConstantData push{};
-                push.model_matrix = obj.transform.mat4();
-                push.normal_matrix = obj.transform.normal_matrix();
+                bool is_transparent = is_material_transparent(material);
 
-                // Get the correct material index for this mesh
-                uint32_t mesh_material_idx = obj.model_data->mesh_material_indices[mesh_idx];
-                push.material_index = obj.model_data->material_buffer_offset + mesh_material_idx;
-
-                // Add Forward+ tile information if enabled
-                if (m_use_forward_plus) {
-                    push.tile_count = glm::uvec2(m_tile_count_x, m_tile_count_y);
-                    push.tile_size = m_tile_size;
-                    push.max_lights_per_tile = m_max_lights_per_tile;
+                // Filter based on render mode
+                if (mode == RenderMode::OpaqueOnly && is_transparent) {
+                    continue;  // Skip transparent meshes in opaque pass
+                }
+                if (mode == RenderMode::TransparentOnly && !is_transparent) {
+                    continue;  // Skip opaque meshes in transparency pass
                 }
 
-                ::vkCmdPushConstants(
-                    frame_info.command_buffer,
-                    m_pipeline->get_layout(),
-                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                    0,
-                    sizeof(PushConstantData),
-                    &push
-                );
+                // For transparent pass, collect and sort back-to-front
+                if (mode == RenderMode::TransparentOnly) {
+                    glm::vec3 obj_pos = obj.transform.translation;
+                    float distance = glm::length(cam_pos - obj_pos);
+                    transparent_meshes.push_back({distance, &obj, mesh_idx});
+                } else {
+                    // Opaque pass: render immediately (no sorting needed)
+                    render_mesh(obj, mesh_idx, frame_info);
+                }
+            }
+        }
 
-                mesh->bind(frame_info.command_buffer);
-                mesh->draw(frame_info.command_buffer);
+        // Render sorted transparent meshes (back-to-front for correct blending)
+        if (mode == RenderMode::TransparentOnly) {
+            std::sort(transparent_meshes.begin(), transparent_meshes.end(),
+                      [](const auto& a, const auto& b) { return a.distance > b.distance; });
+
+            for (auto& tm : transparent_meshes) {
+                render_mesh(*tm.obj, tm.mesh_idx, frame_info);
             }
         }
     }
@@ -207,5 +229,53 @@ namespace klingon {
         m_tile_count_y = tile_count_y;
         m_tile_size = tile_size;
         m_max_lights_per_tile = max_lights_per_tile;
+    }
+
+    auto SimpleRenderSystem::is_material_transparent(const Material& material) const -> bool {
+        // Material is transparent if:
+        // 1. Has opacity texture (bit 3 set), OR
+        // 2. Base color alpha < 0.99 (material-level transparency)
+
+        if ((material.gpu_data.material_flags & 8u) != 0u) {
+            return true;  // Has opacity texture (separate alpha map)
+        }
+
+        if (material.gpu_data.base_color_factor.a < 0.99f) {
+            return true;  // Material-level alpha
+        }
+
+        return false;
+    }
+
+    auto SimpleRenderSystem::render_mesh(GameObject& obj, size_t mesh_idx, FrameInfo& frame_info) -> void {
+        auto& mesh = obj.model_data->meshes[mesh_idx];
+
+        // Setup push constants
+        PushConstantData push{};
+        push.model_matrix = obj.transform.mat4();
+        push.normal_matrix = obj.transform.normal_matrix();
+
+        // Get the correct material index for this mesh
+        uint32_t mesh_material_idx = obj.model_data->mesh_material_indices[mesh_idx];
+        push.material_index = obj.model_data->material_buffer_offset + mesh_material_idx;
+
+        // Add Forward+ tile information if enabled
+        if (m_use_forward_plus) {
+            push.tile_count = glm::uvec2(m_tile_count_x, m_tile_count_y);
+            push.tile_size = m_tile_size;
+            push.max_lights_per_tile = m_max_lights_per_tile;
+        }
+
+        ::vkCmdPushConstants(
+            frame_info.command_buffer,
+            m_pipeline->get_layout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(PushConstantData),
+            &push
+        );
+
+        mesh->bind(frame_info.command_buffer);
+        mesh->draw(frame_info.command_buffer);
     }
 } // namespace klingon

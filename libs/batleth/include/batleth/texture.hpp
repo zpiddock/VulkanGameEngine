@@ -19,6 +19,7 @@ namespace batleth {
         Albedo,
         Normal,
         MetallicRoughness,
+        Opacity,
         Unknown
     };
 

@@ -38,6 +38,7 @@ TextureManager::TextureManager(const Config& config)
     m_albedo_textures.reserve(m_max_textures);
     m_normal_textures.reserve(m_max_textures);
     m_pbr_textures.reserve(m_max_textures);
+    m_opacity_textures.reserve(m_max_textures);
 
     // Reserve space for materials
     m_material_data.reserve(m_max_materials);
@@ -142,7 +143,12 @@ auto TextureManager::create_default_textures() -> void {
                                                 batleth::TextureType::MetallicRoughness,
                                                 "default_pbr"));
 
-    FED_TRACE("Created 3 default textures");
+    // Create default opacity (fully opaque: 255, 255, 255, 255)
+    m_opacity_textures.push_back(create_1x1_texture(255, 255, 255, 255,
+                                                    batleth::TextureType::Opacity,
+                                                    "default_opacity"));
+
+    FED_TRACE("Created 4 default textures");
 }
 
 auto TextureManager::create_material_buffer() -> void {
@@ -215,8 +221,12 @@ auto TextureManager::create_descriptor_set_layout() -> void {
     layout_builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                VK_SHADER_STAGE_FRAGMENT_BIT, m_max_textures);
 
-    // Binding 3: Material buffer (SSBO)
-    layout_builder.add_binding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    // Binding 3: Opacity textures (unbounded array)
+    layout_builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                               VK_SHADER_STAGE_FRAGMENT_BIT, m_max_textures);
+
+    // Binding 4: Material buffer (SSBO)
+    layout_builder.add_binding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
     m_descriptor_layout = layout_builder.build();
@@ -230,7 +240,7 @@ auto TextureManager::create_descriptor_pool() -> void {
     batleth::DescriptorPool::Builder pool_builder(m_device.get_logical_device());
 
     pool_builder.set_max_sets(1);
-    pool_builder.add_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_max_textures * 3);
+    pool_builder.add_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_max_textures * 4);  // 4 texture arrays: albedo, normal, pbr, opacity
     pool_builder.add_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 
     m_descriptor_pool = pool_builder.build();
@@ -289,6 +299,15 @@ auto TextureManager::update_descriptors() -> void {
         pbr_infos.push_back(info);
     }
 
+    std::vector<VkDescriptorImageInfo> opacity_infos;
+    for (const auto& tex : m_opacity_textures) {
+        VkDescriptorImageInfo info{};
+        info.sampler = m_default_sampler->get_handle();
+        info.imageView = tex->get_image().get_view();
+        info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        opacity_infos.push_back(info);
+    }
+
     // Material buffer info
     VkDescriptorBufferInfo buffer_info{};
     buffer_info.buffer = m_material_buffer->get_buffer();
@@ -331,11 +350,22 @@ auto TextureManager::update_descriptors() -> void {
     pbr_write.pImageInfo = pbr_infos.data();
     writes.push_back(pbr_write);
 
+    // Opacity textures
+    VkWriteDescriptorSet opacity_write{};
+    opacity_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    opacity_write.dstSet = m_descriptor_set;
+    opacity_write.dstBinding = 3;
+    opacity_write.dstArrayElement = 0;
+    opacity_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    opacity_write.descriptorCount = static_cast<uint32_t>(opacity_infos.size());
+    opacity_write.pImageInfo = opacity_infos.data();
+    writes.push_back(opacity_write);
+
     // Material buffer
     VkWriteDescriptorSet buffer_write{};
     buffer_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     buffer_write.dstSet = m_descriptor_set;
-    buffer_write.dstBinding = 3;
+    buffer_write.dstBinding = 4;
     buffer_write.dstArrayElement = 0;
     buffer_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     buffer_write.descriptorCount = 1;
@@ -349,8 +379,8 @@ auto TextureManager::update_descriptors() -> void {
 
     m_descriptors_dirty = false;
 
-    FED_TRACE("Descriptors updated ({} albedo, {} normal, {} pbr textures, {} materials)",
-             albedo_infos.size(), normal_infos.size(), pbr_infos.size(), m_material_count);
+    FED_TRACE("Descriptors updated ({} albedo, {} normal, {} pbr, {} opacity textures, {} materials)",
+             albedo_infos.size(), normal_infos.size(), pbr_infos.size(), opacity_infos.size(), m_material_count);
 }
 
 auto TextureManager::load_texture(
@@ -372,6 +402,9 @@ auto TextureManager::load_texture(
             break;
         case batleth::TextureType::MetallicRoughness:
             cache = &m_pbr_cache;
+            break;
+        case batleth::TextureType::Opacity:
+            cache = &m_opacity_cache;
             break;
         default:
             FED_ERROR("Unknown texture type");
@@ -505,6 +538,10 @@ auto TextureManager::load_stb_image(const std::string& filepath,
         case batleth::TextureType::MetallicRoughness:
             index = static_cast<uint32_t>(m_pbr_textures.size());
             m_pbr_textures.push_back(std::move(texture));
+            break;
+        case batleth::TextureType::Opacity:
+            index = static_cast<uint32_t>(m_opacity_textures.size());
+            m_opacity_textures.push_back(std::move(texture));
             break;
         default:
             FED_ERROR("Unknown texture type");
