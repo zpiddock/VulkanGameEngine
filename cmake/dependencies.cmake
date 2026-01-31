@@ -173,6 +173,14 @@ if(TARGET VulkanMemoryAllocator)
     target_compile_options(VulkanMemoryAllocator INTERFACE -w)
 endif()
 
+# PhysicsFS has some empty translation unit issues on non-target platforms
+if(TARGET physfs-shared)
+    target_compile_options(physfs-shared PRIVATE -w)
+endif()
+if(TARGET physfs-static)
+    target_compile_options(physfs-static PRIVATE -w)
+endif()
+
 add_library(stb INTERFACE
     ${stb_SOURCE_DIR}/stb_image.h
 )

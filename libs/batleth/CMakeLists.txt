@@ -20,6 +20,7 @@ add_library(batleth SHARED
         src/image.cpp
         src/sampler.cpp
         src/image_utils.cpp
+        src/sync.cpp
 )
 
 target_include_directories(batleth

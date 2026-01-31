@@ -20,6 +20,7 @@ add_library(klingon SHARED
         src/model/asset_loader.cpp
         src/model_data.cpp
         src/texture_manager.cpp
+        src/renderer/descriptor_manager.cpp
 )
 
 target_include_directories(klingon
