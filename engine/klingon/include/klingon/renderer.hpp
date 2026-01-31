@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <array>
 #include <functional>
 
 #include "frame_info.hpp"
@@ -17,6 +18,12 @@
 #include "batleth/swapchain.hpp"
 #include "batleth/buffer.hpp"
 #include "batleth/descriptors.hpp"
+#include "batleth/image.hpp"
+#include "batleth/sampler.hpp"
+#include "batleth/sync.hpp"
+#include "batleth/command_buffer.hpp"
+#include "renderer/frame_context.hpp"
+#include "renderer/descriptor_manager.hpp"
 #include "render_systems/point_light_system.hpp"
 #include "render_systems/simple_render_system.hpp"
 #include "render_systems/blit_render_system.hpp"
@@ -66,7 +73,7 @@ namespace klingon {
 
         auto on_resize() -> void;
 
-        auto get_current_command_buffer() const -> VkCommandBuffer { return m_command_buffers[m_current_frame]; }
+        auto get_current_command_buffer() const -> VkCommandBuffer { return m_frames[m_current_frame].command_buffer; }
         auto get_current_frame_index() const -> std::uint32_t { return m_current_frame; }
 
         // ImGui access (only available if enabled)
@@ -106,6 +113,9 @@ namespace klingon {
         // Texture manager access
         auto get_texture_manager() -> TextureManager& { return *m_texture_manager; }
 
+        // Descriptor manager access (for centralized descriptor management)
+        auto get_descriptor_manager() -> DescriptorManager& { return *m_descriptor_manager; }
+
         // Scene rendering (new Scene API)
         auto render_scene(Scene *scene, float delta_time) -> void;
 
@@ -134,7 +144,7 @@ namespace klingon {
 
         // Viewport access (for editor)
         auto get_offscreen_image_view() const -> VkImageView { return m_offscreen_image_view; }
-        auto get_offscreen_sampler() const -> VkSampler { return m_offscreen_sampler; }
+        auto get_offscreen_sampler() const -> VkSampler { return m_offscreen_sampler ? m_offscreen_sampler->get_handle() : VK_NULL_HANDLE; }
         auto is_offscreen_enabled() const -> bool { return m_config.renderer.offscreen.enabled; }
 
         /**
@@ -194,23 +204,17 @@ namespace klingon {
         std::unique_ptr<batleth::Surface> m_surface;
         std::unique_ptr<batleth::Device> m_device;
 
-        // Synchronization objects (destroyed before device)
-        static constexpr std::uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-        std::vector<VkSemaphore> m_image_available_semaphores;
-        std::vector<VkSemaphore> m_render_finished_semaphores;
-        std::vector<VkFence> m_in_flight_fences;
+        // Per-frame resources (RAII managed via FrameContext)
+        std::array<FrameContext, MAX_FRAMES_IN_FLIGHT> m_frames;
 
-        // Command buffers (destroyed before device)
-        VkCommandPool m_command_pool = VK_NULL_HANDLE;
-        std::vector<VkCommandBuffer> m_command_buffers;
+        // Command pool and buffers (RAII managed)
+        std::unique_ptr<batleth::CommandBuffer> m_command_buffer_manager;
 
         // Rendering resources (destroyed before device)
         std::unique_ptr<batleth::Swapchain> m_swapchain;
 
-        // Depth resources
-        VkImage m_depth_image = VK_NULL_HANDLE;
-        VkDeviceMemory m_depth_image_memory = VK_NULL_HANDLE;
-        VkImageView m_depth_image_view = VK_NULL_HANDLE;
+        // Depth resources (RAII managed via batleth::Image with VMA)
+        std::unique_ptr<batleth::Image> m_depth_image;
         VkFormat m_depth_format = VK_FORMAT_D32_SFLOAT;
 
         // ImGui must be destroyed before device (contains Vulkan resources)
@@ -239,10 +243,13 @@ namespace klingon {
         std::vector<VkDescriptorSet> m_forward_plus_descriptor_sets;
         VkPipelineLayout m_light_culling_pipeline_layout = VK_NULL_HANDLE;
         VkPipeline m_light_culling_pipeline = VK_NULL_HANDLE;
-        VkSampler m_depth_sampler = VK_NULL_HANDLE;
+        std::unique_ptr<batleth::Sampler> m_depth_sampler;
 
         // Texture management
         std::unique_ptr<TextureManager> m_texture_manager;
+
+        // Centralized descriptor management (Phase 1 Foundation)
+        std::unique_ptr<DescriptorManager> m_descriptor_manager;
 
         // Render systems
         std::unique_ptr<SimpleRenderSystem> m_simple_render_system;
@@ -253,8 +260,8 @@ namespace klingon {
         bool m_debug_rendering_enabled = true;
 
         // Offscreen rendering resources
-        VkSampler m_offscreen_sampler = VK_NULL_HANDLE;
-        VkImageView m_offscreen_image_view = VK_NULL_HANDLE;
+        std::unique_ptr<batleth::Sampler> m_offscreen_sampler;
+        VkImageView m_offscreen_image_view = VK_NULL_HANDLE;  // Non-owning, from render graph
         batleth::ResourceHandle m_offscreen_color_handle = batleth::INVALID_RESOURCE;
 
         // ImGui callback

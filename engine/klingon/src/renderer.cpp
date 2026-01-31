@@ -35,13 +35,26 @@ namespace klingon {
         create_instance();
         create_device();
 
+        // Create DescriptorManager for centralized descriptor set management
+        FED_INFO("Creating DescriptorManager");
+        DescriptorManagerConfig desc_config{
+            .device = *m_device,
+            .max_global_sets = MAX_FRAMES_IN_FLIGHT * 2,
+            .max_per_pass_sets = MAX_FRAMES_IN_FLIGHT * 4,
+            .max_uniform_buffers = 32,
+            .max_storage_buffers = 32,
+            .max_sampled_images = 64,
+            .max_storage_images = 16
+        };
+        m_descriptor_manager = std::make_unique<DescriptorManager>(desc_config);
+
         // Create TextureManager early (needed for asset loading)
         FED_INFO("Creating TextureManager");
         TextureManager::Config tex_config{
-        .device = *m_device,
-        .allocator = get_allocator(),  // Use getter to ensure allocator is initialized
-        .max_textures = 4096,
-        .max_materials = 1024,
+            .device = *m_device,
+            .allocator = get_allocator(),  // Use getter to ensure allocator is initialized
+            .max_textures = 4096,
+            .max_materials = 1024,
         };
         m_texture_manager = std::make_unique<TextureManager>(tex_config);
 
@@ -53,24 +66,16 @@ namespace klingon {
 
         // Create offscreen sampler (if offscreen rendering enabled)
         if (m_config.renderer.offscreen.enabled) {
-            VkSamplerCreateInfo sampler_info{};
-            sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-            sampler_info.magFilter = VK_FILTER_LINEAR;
-            sampler_info.minFilter = VK_FILTER_LINEAR;
-            sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-            sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-            sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-            sampler_info.anisotropyEnable = VK_FALSE;
-            sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-            sampler_info.unnormalizedCoordinates = VK_FALSE;
-            sampler_info.compareEnable = VK_FALSE;
-            sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
-            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-
-            if (::vkCreateSampler(m_device->get_logical_device(), &sampler_info, nullptr,
-                                  &m_offscreen_sampler) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to create offscreen sampler");
-            }
+            m_offscreen_sampler = std::make_unique<batleth::Sampler>(batleth::Sampler::Config{
+                .device = m_device->get_logical_device(),
+                .mag_filter = VK_FILTER_LINEAR,
+                .min_filter = VK_FILTER_LINEAR,
+                .mipmap_mode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                .address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                .address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                .address_mode_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                .anisotropy_enable = false
+            });
         }
 
         // Initialize ImGui if requested
@@ -99,50 +104,28 @@ namespace klingon {
             m_device->wait_idle();
         }
 
-        // Cleanup raw Vulkan handles that don't have RAII wrappers
-        // These are the only resources requiring manual cleanup
-        for (auto semaphore: m_image_available_semaphores) {
-            ::vkDestroySemaphore(m_device->get_logical_device(), semaphore, nullptr);
-        }
-        for (auto semaphore: m_render_finished_semaphores) {
-            ::vkDestroySemaphore(m_device->get_logical_device(), semaphore, nullptr);
-        }
-        for (auto fence: m_in_flight_fences) {
-            ::vkDestroyFence(m_device->get_logical_device(), fence, nullptr);
-        }
-
-        if (m_command_pool != VK_NULL_HANDLE) {
-            ::vkDestroyCommandPool(m_device->get_logical_device(), m_command_pool, nullptr);
-        }
-
-        // Cleanup offscreen sampler
-        if (m_offscreen_sampler != VK_NULL_HANDLE) {
-            ::vkDestroySampler(m_device->get_logical_device(), m_offscreen_sampler, nullptr);
-        }
-
-        // Cleanup Forward+ resources
+        // Cleanup Forward+ resources (pipeline layouts still need manual cleanup)
         cleanup_forward_plus_resources();
 
-        // Cleanup depth resources
-        cleanup_depth_resources();
-
-        // All RAII-wrapped resources (swapchain, surface, imgui_context, pipeline,
-        // shaders, device, instance) are automatically destroyed in correct order
-        // via C++ member destruction (reverse of declaration order)
+        // All RAII-wrapped resources (frames, command buffers, depth image, samplers,
+        // swapchain, surface, imgui_context, device, instance) are automatically
+        // destroyed in correct order via C++ member destruction (reverse of declaration order)
 
         FED_DEBUG("Renderer destroyed successfully");
     }
 
     auto Renderer::begin_frame() -> bool {
+        auto& frame = m_frames[m_current_frame];
+
         // Wait for the previous frame to finish
-        ::vkWaitForFences(m_device->get_logical_device(), 1, &m_in_flight_fences[m_current_frame], VK_TRUE, UINT64_MAX);
+        frame.wait_for_fence();
 
         // Acquire next image from swapchain
         VkResult result = ::vkAcquireNextImageKHR(
             m_device->get_logical_device(),
             m_swapchain->get_handle(),
             UINT64_MAX,
-            m_image_available_semaphores[m_current_frame],
+            frame.get_image_available_semaphore(),
             VK_NULL_HANDLE,
             &m_current_image_index
         );
@@ -156,10 +139,10 @@ namespace klingon {
         }
 
         // Reset fence only if we're submitting work
-        ::vkResetFences(m_device->get_logical_device(), 1, &m_in_flight_fences[m_current_frame]);
+        frame.reset_fence();
 
         // Reset command buffer
-        ::vkResetCommandBuffer(m_command_buffers[m_current_frame], 0);
+        ::vkResetCommandBuffer(frame.command_buffer, 0);
 
         // Begin ImGui frame if enabled
         // User code can now call ImGui functions
@@ -171,13 +154,16 @@ namespace klingon {
     }
 
     auto Renderer::begin_rendering() -> void {
+        auto& frame = m_frames[m_current_frame];
+        VkCommandBuffer cmd = frame.command_buffer;
+
         // Begin recording command buffer
         VkCommandBufferBeginInfo begin_info{};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         begin_info.flags = 0;
         begin_info.pInheritanceInfo = nullptr;
 
-        if (::vkBeginCommandBuffer(m_command_buffers[m_current_frame], &begin_info) != VK_SUCCESS) {
+        if (::vkBeginCommandBuffer(cmd, &begin_info) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin recording command buffer");
         }
 
@@ -204,7 +190,7 @@ namespace klingon {
         depth_barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        depth_barrier.image = m_depth_image;
+        depth_barrier.image = m_depth_image->get_image();
         depth_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_barrier.subresourceRange.baseMipLevel = 0;
         depth_barrier.subresourceRange.levelCount = 1;
@@ -217,7 +203,7 @@ namespace klingon {
         std::array barriers = {barrier, depth_barrier};
 
         ::vkCmdPipelineBarrier(
-            m_command_buffers[m_current_frame],
+            cmd,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
             0,
@@ -238,7 +224,7 @@ namespace klingon {
         // Depth attachment
         VkRenderingAttachmentInfo depth_attachment{};
         depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depth_attachment.imageView = m_depth_image_view;
+        depth_attachment.imageView = m_depth_image->get_view();
         depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -253,7 +239,7 @@ namespace klingon {
         rendering_info.pColorAttachments = &color_attachment;
         rendering_info.pDepthAttachment = &depth_attachment;
 
-        ::vkCmdBeginRendering(m_command_buffers[m_current_frame], &rendering_info);
+        ::vkCmdBeginRendering(cmd, &rendering_info);
 
         // Set viewport
         VkViewport viewport{};
@@ -263,23 +249,26 @@ namespace klingon {
         viewport.height = static_cast<float>(m_swapchain->get_extent().height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-        ::vkCmdSetViewport(m_command_buffers[m_current_frame], 0, 1, &viewport);
+        ::vkCmdSetViewport(cmd, 0, 1, &viewport);
 
         // Set scissor
         VkRect2D scissor{};
         scissor.offset = {0, 0};
         scissor.extent = m_swapchain->get_extent();
-        ::vkCmdSetScissor(m_command_buffers[m_current_frame], 0, 1, &scissor);
+        ::vkCmdSetScissor(cmd, 0, 1, &scissor);
     }
 
     auto Renderer::end_rendering() -> void {
+        auto& frame = m_frames[m_current_frame];
+        VkCommandBuffer cmd = frame.command_buffer;
+
         // Render ImGui if enabled
         if (m_imgui_context) {
-            m_imgui_context->render(m_command_buffers[m_current_frame]);
+            m_imgui_context->render(cmd);
         }
 
         // End dynamic rendering
-        ::vkCmdEndRendering(m_command_buffers[m_current_frame]);
+        ::vkCmdEndRendering(cmd);
 
         // Transition image to present
         VkImageMemoryBarrier barrier{};
@@ -298,7 +287,7 @@ namespace klingon {
         barrier.dstAccessMask = 0;
 
         ::vkCmdPipelineBarrier(
-            m_command_buffers[m_current_frame],
+            cmd,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
             0,
@@ -308,12 +297,14 @@ namespace klingon {
         );
 
         // End command buffer recording
-        if (::vkEndCommandBuffer(m_command_buffers[m_current_frame]) != VK_SUCCESS) {
+        if (::vkEndCommandBuffer(cmd) != VK_SUCCESS) {
             throw std::runtime_error("Failed to record command buffer");
         }
     }
 
     auto Renderer::end_frame() -> void {
+        auto& frame = m_frames[m_current_frame];
+
         // End ImGui frame (prepares draw data)
         if (m_imgui_context) {
             m_imgui_context->end_frame();
@@ -323,20 +314,19 @@ namespace klingon {
         VkSubmitInfo submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        VkSemaphore wait_semaphores[] = {m_image_available_semaphores[m_current_frame]};
+        VkSemaphore wait_semaphores[] = {frame.get_image_available_semaphore()};
         VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submit_info.waitSemaphoreCount = 1;
         submit_info.pWaitSemaphores = wait_semaphores;
         submit_info.pWaitDstStageMask = wait_stages;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
+        submit_info.pCommandBuffers = &frame.command_buffer;
 
-        VkSemaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
+        VkSemaphore signal_semaphores[] = {frame.get_render_finished_semaphore()};
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = signal_semaphores;
 
-        if (::vkQueueSubmit(m_device->get_graphics_queue(), 1, &submit_info, m_in_flight_fences[m_current_frame]) !=
-            VK_SUCCESS) {
+        if (::vkQueueSubmit(m_device->get_graphics_queue(), 1, &submit_info, frame.get_fence()) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit draw command buffer");
         }
 
@@ -389,8 +379,8 @@ namespace klingon {
         // Wait for device to be idle
         m_device->wait_idle();
 
-        // Cleanup old swapchain-dependent resources
-        cleanup_depth_resources();
+        // Cleanup old swapchain-dependent resources (RAII handles depth image automatically)
+        m_depth_image.reset();
         m_swapchain.reset();
 
         // Recreate swapchain and dependent resources
@@ -502,70 +492,41 @@ namespace klingon {
     }
 
     auto Renderer::create_command_pool() -> void {
-        FED_DEBUG("Creating command pool");
+        FED_DEBUG("Creating command pool and buffers");
 
         auto queue_family_indices = m_device->get_queue_family_indices();
 
-        VkCommandPoolCreateInfo pool_info{};
-        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
-
-        if (::vkCreateCommandPool(m_device->get_logical_device(), &pool_info, nullptr, &m_command_pool) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create command pool");
-        }
+        // Create command buffer manager (RAII wrapper for pool + buffers)
+        m_command_buffer_manager = std::make_unique<batleth::CommandBuffer>(batleth::CommandBuffer::Config{
+            .device = m_device->get_logical_device(),
+            .queue_family_index = queue_family_indices.graphics_family.value(),
+            .buffer_count = MAX_FRAMES_IN_FLIGHT
+        });
 
         // Set command pool on device for single-time commands (staging buffers, etc.)
-        m_device->set_command_pool(m_command_pool);
+        m_device->set_command_pool(m_command_buffer_manager->get_command_pool());
 
         FED_DEBUG("Command pool created successfully");
     }
 
     auto Renderer::create_command_buffers() -> void {
-        FED_DEBUG("Creating command buffers");
-
-        m_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-        VkCommandBufferAllocateInfo alloc_info{};
-        alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        alloc_info.commandPool = m_command_pool;
-        alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        alloc_info.commandBufferCount = static_cast<std::uint32_t>(m_command_buffers.size());
-
-        if (::vkAllocateCommandBuffers(m_device->get_logical_device(), &alloc_info, m_command_buffers.data()) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate command buffers");
-        }
-
-        FED_DEBUG("Command buffers created successfully");
+        // Command buffers are now assigned in create_sync_objects after frame contexts are created
+        FED_DEBUG("Command buffers created (assignment deferred to sync object creation)");
     }
 
     auto Renderer::create_sync_objects() -> void {
-        FED_DEBUG("Creating synchronization objects");
+        FED_DEBUG("Creating synchronization objects and assigning command buffers");
 
-        m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+        // Get command buffers from the pool
+        const auto& cmd_buffers = m_command_buffer_manager->get_command_buffers();
 
-        VkSemaphoreCreateInfo semaphore_info{};
-        semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fence_info{};
-        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled so first frame doesn't wait
-
+        // Create frame contexts with RAII sync primitives and assign command buffers
         for (std::uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            if (::vkCreateSemaphore(m_device->get_logical_device(), &semaphore_info, nullptr,
-                                    &m_image_available_semaphores[i]) != VK_SUCCESS ||
-                ::vkCreateSemaphore(m_device->get_logical_device(), &semaphore_info, nullptr,
-                                    &m_render_finished_semaphores[i]) != VK_SUCCESS ||
-                ::vkCreateFence(m_device->get_logical_device(), &fence_info, nullptr, &m_in_flight_fences[i]) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("Failed to create synchronization objects");
-            }
+            m_frames[i] = FrameContext::create(m_device->get_logical_device());
+            m_frames[i].command_buffer = cmd_buffers[i];
         }
 
-        FED_DEBUG("Synchronization objects created successfully");
+        FED_DEBUG("Synchronization objects and command buffers created successfully");
     }
 
 
@@ -575,78 +536,28 @@ namespace klingon {
         m_depth_format = find_depth_format();
         auto extent = m_swapchain->get_extent();
 
-        // Create depth image
-        VkImageCreateInfo image_info{};
-        image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        image_info.imageType = VK_IMAGE_TYPE_2D;
-        image_info.extent.width = extent.width;
-        image_info.extent.height = extent.height;
-        image_info.extent.depth = 1;
-        image_info.mipLevels = 1;
-        image_info.arrayLayers = 1;
-        image_info.format = m_depth_format;
-        image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-        image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (::vkCreateImage(m_device->get_logical_device(), &image_info, nullptr, &m_depth_image) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create depth image");
-        }
-
-        // Allocate memory for depth image
-        VkMemoryRequirements mem_requirements;
-        ::vkGetImageMemoryRequirements(m_device->get_logical_device(), m_depth_image, &mem_requirements);
-
-        VkMemoryAllocateInfo alloc_info{};
-        alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        alloc_info.allocationSize = mem_requirements.size;
-        alloc_info.memoryTypeIndex = m_device->find_memory_type(
-            mem_requirements.memoryTypeBits,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        );
-
-        if (::vkAllocateMemory(m_device->get_logical_device(), &alloc_info, nullptr, &m_depth_image_memory) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate depth image memory");
-        }
-
-        ::vkBindImageMemory(m_device->get_logical_device(), m_depth_image, m_depth_image_memory, 0);
-
-        // Create depth image view
-        VkImageViewCreateInfo view_info{};
-        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_info.image = m_depth_image;
-        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_info.format = m_depth_format;
-        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        view_info.subresourceRange.baseMipLevel = 0;
-        view_info.subresourceRange.levelCount = 1;
-        view_info.subresourceRange.baseArrayLayer = 0;
-        view_info.subresourceRange.layerCount = 1;
-
-        if (::vkCreateImageView(m_device->get_logical_device(), &view_info, nullptr, &m_depth_image_view) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("Failed to create depth image view");
-        }
+        // Create depth image using RAII batleth::Image with VMA
+        m_depth_image = std::make_unique<batleth::Image>(batleth::Image::Config{
+            .device = m_device->get_logical_device(),
+            .allocator = get_allocator(),
+            .width = extent.width,
+            .height = extent.height,
+            .mip_levels = 1,
+            .array_layers = 1,
+            .format = m_depth_format,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .create_view = true
+        });
 
         FED_DEBUG("Depth resources created successfully");
     }
 
     auto Renderer::cleanup_depth_resources() -> void {
-        if (m_depth_image_view != VK_NULL_HANDLE) {
-            ::vkDestroyImageView(m_device->get_logical_device(), m_depth_image_view, nullptr);
-            m_depth_image_view = VK_NULL_HANDLE;
-        }
-        if (m_depth_image != VK_NULL_HANDLE) {
-            ::vkDestroyImage(m_device->get_logical_device(), m_depth_image, nullptr);
-            m_depth_image = VK_NULL_HANDLE;
-        }
-        if (m_depth_image_memory != VK_NULL_HANDLE) {
-            ::vkFreeMemory(m_device->get_logical_device(), m_depth_image_memory, nullptr);
-            m_depth_image_memory = VK_NULL_HANDLE;
-        }
+        // RAII handles cleanup automatically when m_depth_image is reset or destroyed
+        m_depth_image.reset();
     }
 
     auto Renderer::find_depth_format() -> VkFormat {
@@ -719,29 +630,20 @@ namespace klingon {
 
         FED_INFO("Creating Forward+ compute pipeline for light culling");
 
-        // Create depth sampler for sampling depth texture in compute shader
-        VkSamplerCreateInfo sampler_info{};
-        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        sampler_info.magFilter = VK_FILTER_NEAREST;
-        sampler_info.minFilter = VK_FILTER_NEAREST;
-        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sampler_info.anisotropyEnable = VK_FALSE;
-        sampler_info.maxAnisotropy = 1.0f;
-        sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        sampler_info.unnormalizedCoordinates = VK_FALSE;
-        sampler_info.compareEnable = VK_FALSE;
-        sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
-        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        sampler_info.mipLodBias = 0.0f;
-        sampler_info.minLod = 0.0f;
-        sampler_info.maxLod = 0.0f;
-
-        if (::vkCreateSampler(m_device->get_logical_device(), &sampler_info, nullptr, &m_depth_sampler) != VK_SUCCESS) {
-            FED_ERROR("Failed to create depth sampler for Forward+ compute");
-            return;
-        }
+        // Create depth sampler for sampling depth texture in compute shader (RAII)
+        m_depth_sampler = std::make_unique<batleth::Sampler>(batleth::Sampler::Config{
+            .device = m_device->get_logical_device(),
+            .mag_filter = VK_FILTER_NEAREST,
+            .min_filter = VK_FILTER_NEAREST,
+            .mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .address_mode_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .anisotropy_enable = false,
+            .max_anisotropy = 1.0f,
+            .min_lod = 0.0f,
+            .max_lod = 0.0f
+        });
 
         // Create descriptor set layout for Set 1 (Forward+ resources)
         // Binding 0: Depth texture (sampler2D) - compute only
@@ -833,6 +735,7 @@ namespace klingon {
     }
 
     auto Renderer::cleanup_forward_plus_resources() -> void {
+        // Pipeline and layout still need manual cleanup (not yet wrapped in RAII)
         if (m_light_culling_pipeline != VK_NULL_HANDLE) {
             ::vkDestroyPipeline(m_device->get_logical_device(), m_light_culling_pipeline, nullptr);
             m_light_culling_pipeline = VK_NULL_HANDLE;
@@ -843,10 +746,8 @@ namespace klingon {
             m_light_culling_pipeline_layout = VK_NULL_HANDLE;
         }
 
-        if (m_depth_sampler != VK_NULL_HANDLE) {
-            ::vkDestroySampler(m_device->get_logical_device(), m_depth_sampler, nullptr);
-            m_depth_sampler = VK_NULL_HANDLE;
-        }
+        // RAII handles sampler cleanup
+        m_depth_sampler.reset();
 
         m_forward_plus_set_layout.reset();
         m_forward_plus_descriptor_pool.reset();
@@ -1119,7 +1020,7 @@ namespace klingon {
 
                             // Write descriptor set with current resources
                             VkDescriptorImageInfo depth_image_info{};
-                            depth_image_info.sampler = m_depth_sampler;
+                            depth_image_info.sampler = m_depth_sampler->get_handle();
                             depth_image_info.imageView = depth_view;
                             depth_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1321,7 +1222,7 @@ namespace klingon {
                             VkImageView offscreen_view = ctx.get_image_view(color_target);
 
                             // Render fullscreen blit
-                            m_blit_render_system->render(ctx.command_buffer, offscreen_view, m_offscreen_sampler, ctx.frame_index);
+                            m_blit_render_system->render(ctx.command_buffer, offscreen_view, m_offscreen_sampler->get_handle(), ctx.frame_index);
                         }
                     )
                     .read(color_target, batleth::ResourceUsage::SampledImage)
@@ -1393,7 +1294,7 @@ namespace klingon {
             return nullptr;
         }
 
-        if (m_offscreen_image_view == VK_NULL_HANDLE || m_offscreen_sampler == VK_NULL_HANDLE) {
+        if (m_offscreen_image_view == VK_NULL_HANDLE || !m_offscreen_sampler) {
             FED_WARN("Offscreen image view or sampler not available");
             return nullptr;
         }
@@ -1401,7 +1302,7 @@ namespace klingon {
         // Create ImGui descriptor set for the offscreen texture
         // ImGui_ImplVulkan_AddTexture returns an ImTextureID (VkDescriptorSet)
         VkDescriptorSet descriptor_set = ::ImGui_ImplVulkan_AddTexture(
-            m_offscreen_sampler,
+            m_offscreen_sampler->get_handle(),
             m_offscreen_image_view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         );
